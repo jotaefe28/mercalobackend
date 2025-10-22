@@ -1,0 +1,1045 @@
+{
+  "info": {
+    "name": "MercaloPOS API Collection",
+    "description": "Sistema POS Multitenant con Sistema de Puntos Integrado (1 punto = $1)",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000/api",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "company_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "client_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "product_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "payment_method_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sale_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "order_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 Autenticación",
+      "item": [
+        {
+          "name": "Registro de Nueva Empresa",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company\": {\n    \"name\": \"Mi Tienda POS\",\n    \"tax_id\": \"123456789-0\",\n    \"email\": \"admin@mitienda.com\",\n    \"phone\": \"+57 300 123 4567\",\n    \"address\": \"Calle 123 #45-67, Ciudad\"\n  },\n  \"admin\": {\n    \"name\": \"Administrador Principal\",\n    \"email\": \"admin@mitienda.com\",\n    \"password\": \"Admin123456!\",\n    \"confirmPassword\": \"Admin123456!\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.tokens) {",
+                  "        pm.collectionVariables.set('access_token', jsonData.data.tokens.accessToken);",
+                  "        pm.collectionVariables.set('refresh_token', jsonData.data.tokens.refreshToken);",
+                  "    }",
+                  "    if (jsonData.data && jsonData.data.user) {",
+                  "        pm.collectionVariables.set('user_id', jsonData.data.user.id);",
+                  "        pm.collectionVariables.set('company_id', jsonData.data.user.company_id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@mitienda.com\",\n  \"password\": \"Admin123456!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "Cambiar Contraseña",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Admin123456!\",\n  \"newPassword\": \"NewPassword123!\",\n  \"confirmPassword\": \"NewPassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/change-password",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "change-password"]
+            }
+          }
+        },
+        {
+          "name": "Recuperar Contraseña",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@mitienda.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/forgot-password",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "forgot-password"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "👥 Usuarios",
+      "item": [
+        {
+          "name": "Crear Usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.user) {",
+                  "        pm.collectionVariables.set('user_id', jsonData.data.user.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Juan Pérez\",\n  \"email\": \"juan@mitienda.com\",\n  \"password\": \"Juan123456!\",\n  \"role\": \"CASHIER\",\n  \"phone\": \"+57 301 234 5678\",\n  \"is_active\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users",
+              "host": ["{{base_url}}"],
+              "path": ["users"]
+            }
+          }
+        },
+        {
+          "name": "Listar Usuarios",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users?page=1&limit=10&role=CASHIER&is_active=true",
+              "host": ["{{base_url}}"],
+              "path": ["users"],
+              "query": [
+                {"key": "page", "value": "1"},
+                {"key": "limit", "value": "10"},
+                {"key": "role", "value": "CASHIER"},
+                {"key": "is_active", "value": "true"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Obtener Usuario por ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Actualizar Usuario",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Juan Pérez Actualizado\",\n  \"phone\": \"+57 301 234 5679\",\n  \"role\": \"MANAGER\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📦 Productos",
+      "item": [
+        {
+          "name": "Crear Producto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.product) {",
+                  "        pm.collectionVariables.set('product_id', jsonData.data.product.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Coca Cola 600ml\",\n  \"description\": \"Bebida gaseosa cola 600ml\",\n  \"sku\": \"COCA-600\",\n  \"barcode\": \"7501234567890\",\n  \"price\": 3500,\n  \"cost\": 2000,\n  \"stock\": 100,\n  \"min_stock\": 10,\n  \"category\": \"Bebidas\",\n  \"supplier\": \"Coca Cola Company\",\n  \"is_active\": true,\n  \"taxable\": true,\n  \"perishable\": false,\n  \"unit\": \"unidad\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/products",
+              "host": ["{{base_url}}"],
+              "path": ["products"]
+            }
+          }
+        },
+        {
+          "name": "Listar Productos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products?page=1&limit=20&category=Bebidas&is_active=true&search=coca",
+              "host": ["{{base_url}}"],
+              "path": ["products"],
+              "query": [
+                {"key": "page", "value": "1"},
+                {"key": "limit", "value": "20"},
+                {"key": "category", "value": "Bebidas"},
+                {"key": "is_active", "value": "true"},
+                {"key": "search", "value": "coca"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Buscar por Código de Barras",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/barcode/7501234567890",
+              "host": ["{{base_url}}"],
+              "path": ["products", "barcode", "7501234567890"]
+            }
+          }
+        },
+        {
+          "name": "Actualizar Stock",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 50,\n  \"type\": \"ADD\",\n  \"reason\": \"Reposición de inventario\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/products/{{product_id}}/stock",
+              "host": ["{{base_url}}"],
+              "path": ["products", "{{product_id}}", "stock"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "👤 Clientes",
+      "item": [
+        {
+          "name": "Crear Cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.client) {",
+                  "        pm.collectionVariables.set('client_id', jsonData.data.client.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"María González\",\n  \"phone\": \"+57 302 345 6789\",\n  \"email\": \"maria@gmail.com\",\n  \"address\": \"Carrera 45 #12-34\",\n  \"rfc\": \"GOMA850315AB1\",\n  \"company_name\": \"Empresa María\",\n  \"birth_date\": \"1985-03-15\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/clients",
+              "host": ["{{base_url}}"],
+              "path": ["clients"]
+            }
+          }
+        },
+        {
+          "name": "Listar Clientes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["clients"],
+              "query": [
+                {"key": "page", "value": "1"},
+                {"key": "limit", "value": "20"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Buscar Clientes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/search?term=maria&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["clients", "search"],
+              "query": [
+                {"key": "term", "value": "maria"},
+                {"key": "limit", "value": "10"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "💳 Métodos de Pago",
+      "item": [
+        {
+          "name": "Crear Método de Pago - Efectivo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.paymentMethod) {",
+                  "        pm.collectionVariables.set('payment_method_id', jsonData.data.paymentMethod.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Efectivo\",\n  \"type\": \"CASH\",\n  \"channel\": \"CASH\",\n  \"commission_rate\": 0,\n  \"is_active\": true,\n  \"requires_authorization\": false,\n  \"min_amount\": 0,\n  \"max_amount\": null,\n  \"description\": \"Pago en efectivo\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/payment-methods",
+              "host": ["{{base_url}}"],
+              "path": ["payment-methods"]
+            }
+          }
+        },
+        {
+          "name": "Crear Método de Pago - Tarjeta",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Tarjeta de Crédito\",\n  \"type\": \"CREDIT_CARD\",\n  \"channel\": \"CARD\",\n  \"commission_rate\": 3.5,\n  \"is_active\": true,\n  \"requires_authorization\": true,\n  \"min_amount\": 10,\n  \"max_amount\": 50000,\n  \"description\": \"Pagos con tarjeta de crédito\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/payment-methods",
+              "host": ["{{base_url}}"],
+              "path": ["payment-methods"]
+            }
+          }
+        },
+        {
+          "name": "Listar Métodos de Pago Activos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/payment-methods/active",
+              "host": ["{{base_url}}"],
+              "path": ["payment-methods", "active"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "⭐ Sistema de Puntos (1 punto = $1)",
+      "item": [
+        {
+          "name": "Consultar Balance de Puntos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/points/balance/{{client_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["points", "balance", "{{client_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Agregar Puntos Manualmente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"points\": 100,\n  \"description\": \"Puntos de bonificación por cumpleaños\",\n  \"expires_at\": \"2025-10-21T23:59:59Z\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/points/add",
+              "host": ["{{base_url}}"],
+              "path": ["points", "add"]
+            }
+          }
+        },
+        {
+          "name": "Redimir Puntos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"points\": 50,\n  \"description\": \"Redención de puntos en compra\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/points/redeem",
+              "host": ["{{base_url}}"],
+              "path": ["points", "redeem"]
+            }
+          }
+        },
+        {
+          "name": "Historial de Puntos del Cliente",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/points/history/{{client_id}}?startDate=2024-01-01&endDate=2024-12-31&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["points", "history", "{{client_id}}"],
+              "query": [
+                {"key": "startDate", "value": "2024-01-01"},
+                {"key": "endDate", "value": "2024-12-31"},
+                {"key": "limit", "value": "50"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Resumen de Puntos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/points/summary",
+              "host": ["{{base_url}}"],
+              "path": ["points", "summary"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "💰 Ventas",
+      "item": [
+        {
+          "name": "Procesar Venta Simple",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.sale) {",
+                  "        pm.collectionVariables.set('sale_id', jsonData.data.sale.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"product_id\": \"{{product_id}}\",\n      \"quantity\": 2\n    }\n  ],\n  \"payments\": [\n    {\n      \"payment_method_id\": \"{{payment_method_id}}\",\n      \"amount\": 7000\n    }\n  ],\n  \"total\": 7000,\n  \"delivery_type\": \"PICKUP\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/sales",
+              "host": ["{{base_url}}"],
+              "path": ["sales"]
+            }
+          }
+        },
+        {
+          "name": "Procesar Venta con Cliente y Puntos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"items\": [\n    {\n      \"product_id\": \"{{product_id}}\",\n      \"quantity\": 3\n    }\n  ],\n  \"payments\": [\n    {\n      \"payment_method_id\": \"{{payment_method_id}}\",\n      \"amount\": 8000\n    }\n  ],\n  \"points_to_redeem\": 50,\n  \"total\": 8000,\n  \"discount_amount\": 2500,\n  \"delivery_type\": \"PICKUP\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/sales",
+              "host": ["{{base_url}}"],
+              "path": ["sales"]
+            }
+          }
+        },
+        {
+          "name": "Listar Ventas",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sales?page=1&limit=20&status=COMPLETED",
+              "host": ["{{base_url}}"],
+              "path": ["sales"],
+              "query": [
+                {"key": "page", "value": "1"},
+                {"key": "limit", "value": "20"},
+                {"key": "status", "value": "COMPLETED"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Obtener Venta por ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sales/{{sale_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["sales", "{{sale_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Ventas de Hoy",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sales/today",
+              "host": ["{{base_url}}"],
+              "path": ["sales", "today"]
+            }
+          }
+        },
+        {
+          "name": "Resumen de Ventas",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sales/summary?startDate=2024-01-01&endDate=2024-12-31",
+              "host": ["{{base_url}}"],
+              "path": ["sales", "summary"],
+              "query": [
+                {"key": "startDate", "value": "2024-01-01"},
+                {"key": "endDate", "value": "2024-12-31"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📋 Órdenes",
+      "item": [
+        {
+          "name": "Crear Orden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.order) {",
+                  "        pm.collectionVariables.set('order_id', jsonData.data.order.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"items\": [\n    {\n      \"product_id\": \"{{product_id}}\",\n      \"quantity\": 2,\n      \"unit_price\": 3500\n    }\n  ],\n  \"delivery_type\": \"DELIVERY\",\n  \"delivery_address\": \"Calle 123 #45-67\",\n  \"delivery_notes\": \"Segundo piso, apartamento 201\",\n  \"scheduled_delivery\": \"2024-12-25T15:30:00Z\",\n  \"notes\": \"Cliente prefiere entrega en la tarde\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": ["{{base_url}}"],
+              "path": ["orders"]
+            }
+          }
+        },
+        {
+          "name": "Listar Órdenes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/orders?status=PENDING&delivery_type=DELIVERY&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["orders"],
+              "query": [
+                {"key": "status", "value": "PENDING"},
+                {"key": "delivery_type", "value": "DELIVERY"},
+                {"key": "limit", "value": "20"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Órdenes Pendientes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/orders/pending",
+              "host": ["{{base_url}}"],
+              "path": ["orders", "pending"]
+            }
+          }
+        },
+        {
+          "name": "Actualizar Estado de Orden",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"READY\",\n  \"notes\": \"Orden lista para entrega\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/orders/{{order_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["orders", "{{order_id}}", "status"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔧 Utilidades",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:3000/health",
+              "host": ["http://localhost:3000"],
+              "path": ["health"]
+            }
+          }
+        },
+        {
+          "name": "Información de la API",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:3000/api",
+              "host": ["http://localhost:3000"],
+              "path": ["api"]
+            }
+          }
+        },
+        {
+          "name": "Documentación Swagger",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:3000/api-docs",
+              "host": ["http://localhost:3000"],
+              "path": ["api-docs"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-refresh token if needed",
+          "const accessToken = pm.collectionVariables.get('access_token');",
+          "if (!accessToken) {",
+          "    console.log('No access token found. Please login first.');",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global response validation",
+          "if (pm.response.code >= 400) {",
+          "    console.log('Error Response:', pm.response.text());",
+          "}",
+          "",
+          "// Handle token refresh if needed",
+          "if (pm.response.code === 401) {",
+          "    console.log('Token expired. Please refresh or login again.');",
+          "}"
+        ]
+      }
+    }
+  ]
+}

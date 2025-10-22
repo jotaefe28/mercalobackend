@@ -1,0 +1,640 @@
+# MercaloPOS API Collection - Postman
+# Sistema POS Multitenant con Sistema de Puntos (1 punto = $1)
+# ================================================================
+
+## Base URL
+http://localhost:3000/api
+
+## Variables de Entorno Postman
+- {{base_url}} = http://localhost:3000/api
+- {{access_token}} = [Se obtendrá del login]
+- {{company_id}} = [Se obtendrá del login]
+- {{user_id}} = [Se obtendrá del login]
+
+# ================================================================
+# 1. AUTENTICACIÓN (/api/auth)
+# ================================================================
+
+### 1.1 Registro de Nueva Empresa
+POST {{base_url}}/auth/register
+Content-Type: application/json
+
+{
+  "company": {
+    "name": "Mi Tienda POS",
+    "tax_id": "123456789-0",
+    "email": "admin@mitienda.com",
+    "phone": "+57 300 123 4567",
+    "address": "Calle 123 #45-67, Ciudad"
+  },
+  "admin": {
+    "name": "Administrador Principal",
+    "email": "admin@mitienda.com",
+    "password": "Admin123456!",
+    "confirmPassword": "Admin123456!"
+  }
+}
+
+### 1.2 Login
+POST {{base_url}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@mitienda.com",
+  "password": "Admin123456!"
+}
+
+### 1.3 Refresh Token
+POST {{base_url}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refresh_token}}"
+}
+
+### 1.4 Logout
+POST {{base_url}}/auth/logout
+Authorization: Bearer {{access_token}}
+
+### 1.5 Cambiar Contraseña
+PUT {{base_url}}/auth/change-password
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "currentPassword": "Admin123456!",
+  "newPassword": "NewPassword123!",
+  "confirmPassword": "NewPassword123!"
+}
+
+### 1.6 Recuperar Contraseña
+POST {{base_url}}/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "admin@mitienda.com"
+}
+
+# ================================================================
+# 2. USUARIOS (/api/users)
+# ================================================================
+
+### 2.1 Crear Usuario
+POST {{base_url}}/users
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "name": "Juan Pérez",
+  "email": "juan@mitienda.com",
+  "password": "Juan123456!",
+  "role": "CASHIER",
+  "phone": "+57 301 234 5678",
+  "is_active": true
+}
+
+### 2.2 Listar Usuarios
+GET {{base_url}}/users?page=1&limit=10&role=CASHIER&is_active=true
+Authorization: Bearer {{access_token}}
+
+### 2.3 Obtener Usuario por ID
+GET {{base_url}}/users/{{user_id}}
+Authorization: Bearer {{access_token}}
+
+### 2.4 Actualizar Usuario
+PUT {{base_url}}/users/{{user_id}}
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "name": "Juan Pérez Actualizado",
+  "phone": "+57 301 234 5679",
+  "role": "MANAGER"
+}
+
+### 2.5 Eliminar Usuario
+DELETE {{base_url}}/users/{{user_id}}
+Authorization: Bearer {{access_token}}
+
+### 2.6 Activar/Desactivar Usuario
+PATCH {{base_url}}/users/{{user_id}}/toggle-status
+Authorization: Bearer {{access_token}}
+
+# ================================================================
+# 3. PRODUCTOS (/api/products)
+# ================================================================
+
+### 3.1 Crear Producto
+POST {{base_url}}/products
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "name": "Coca Cola 600ml",
+  "description": "Bebida gaseosa cola 600ml",
+  "sku": "COCA-600",
+  "barcode": "7501234567890",
+  "price": 3500,
+  "cost": 2000,
+  "stock": 100,
+  "min_stock": 10,
+  "category": "Bebidas",
+  "supplier": "Coca Cola Company",
+  "is_active": true,
+  "taxable": true,
+  "perishable": false,
+  "unit": "unidad"
+}
+
+### 3.2 Listar Productos
+GET {{base_url}}/products?page=1&limit=20&category=Bebidas&is_active=true&search=coca
+Authorization: Bearer {{access_token}}
+
+### 3.3 Buscar Productos por Código de Barras
+GET {{base_url}}/products/barcode/7501234567890
+Authorization: Bearer {{access_token}}
+
+### 3.4 Obtener Producto por ID
+GET {{base_url}}/products/{{product_id}}
+Authorization: Bearer {{access_token}}
+
+### 3.5 Actualizar Producto
+PUT {{base_url}}/products/{{product_id}}
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "name": "Coca Cola 600ml - Actualizado",
+  "price": 3800,
+  "stock": 150
+}
+
+### 3.6 Eliminar Producto
+DELETE {{base_url}}/products/{{product_id}}
+Authorization: Bearer {{access_token}}
+
+### 3.7 Actualizar Stock
+PATCH {{base_url}}/products/{{product_id}}/stock
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "quantity": 50,
+  "type": "ADD",
+  "reason": "Reposición de inventario"
+}
+
+### 3.8 Productos con Stock Bajo
+GET {{base_url}}/products/low-stock
+Authorization: Bearer {{access_token}}
+
+### 3.9 Categorías de Productos
+GET {{base_url}}/products/categories
+Authorization: Bearer {{access_token}}
+
+# ================================================================
+# 4. CLIENTES (/api/clients)
+# ================================================================
+
+### 4.1 Crear Cliente
+POST {{base_url}}/clients
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "name": "María González",
+  "phone": "+57 302 345 6789",
+  "email": "maria@gmail.com",
+  "address": "Carrera 45 #12-34",
+  "rfc": "GOMA850315AB1",
+  "company_name": "Empresa María",
+  "birth_date": "1985-03-15"
+}
+
+### 4.2 Listar Clientes
+GET {{base_url}}/clients?page=1&limit=20&search=maria
+Authorization: Bearer {{access_token}}
+
+### 4.3 Buscar Clientes
+GET {{base_url}}/clients/search?term=maria&limit=10
+Authorization: Bearer {{access_token}}
+
+### 4.4 Obtener Cliente por ID
+GET {{base_url}}/clients/{{client_id}}
+Authorization: Bearer {{access_token}}
+
+### 4.5 Actualizar Cliente
+PUT {{base_url}}/clients/{{client_id}}
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "name": "María González Actualizada",
+  "phone": "+57 302 345 6780",
+  "email": "maria.nueva@gmail.com"
+}
+
+### 4.6 Eliminar Cliente
+DELETE {{base_url}}/clients/{{client_id}}
+Authorization: Bearer {{access_token}}
+
+### 4.7 Historial de Cliente
+GET {{base_url}}/clients/{{client_id}}/history?startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer {{access_token}}
+
+### 4.8 Estadísticas de Cliente
+GET {{base_url}}/clients/{{client_id}}/stats
+Authorization: Bearer {{access_token}}
+
+### 4.9 Top Clientes
+GET {{base_url}}/clients/top-customers?limit=10
+Authorization: Bearer {{access_token}}
+
+# ================================================================
+# 5. MÉTODOS DE PAGO (/api/payment-methods)
+# ================================================================
+
+### 5.1 Crear Método de Pago
+POST {{base_url}}/payment-methods
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "name": "Efectivo",
+  "type": "CASH",
+  "channel": "CASH",
+  "commission_rate": 0,
+  "is_active": true,
+  "requires_authorization": false,
+  "min_amount": 0,
+  "max_amount": null,
+  "description": "Pago en efectivo"
+}
+
+### 5.2 Crear Método de Pago - Tarjeta
+POST {{base_url}}/payment-methods
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "name": "Tarjeta de Crédito",
+  "type": "CREDIT_CARD",
+  "channel": "CARD",
+  "commission_rate": 3.5,
+  "is_active": true,
+  "requires_authorization": true,
+  "min_amount": 10,
+  "max_amount": 50000,
+  "description": "Pagos con tarjeta de crédito"
+}
+
+### 5.3 Listar Métodos de Pago
+GET {{base_url}}/payment-methods
+Authorization: Bearer {{access_token}}
+
+### 5.4 Métodos de Pago Activos
+GET {{base_url}}/payment-methods/active
+Authorization: Bearer {{access_token}}
+
+### 5.5 Obtener Método de Pago por ID
+GET {{base_url}}/payment-methods/{{payment_method_id}}
+Authorization: Bearer {{access_token}}
+
+### 5.6 Actualizar Método de Pago
+PUT {{base_url}}/payment-methods/{{payment_method_id}}
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "name": "Efectivo Actualizado",
+  "commission_rate": 0.5
+}
+
+# ================================================================
+# 6. SISTEMA DE PUNTOS (/api/points) - 1 punto = $1
+# ================================================================
+
+### 6.1 Consultar Balance de Puntos
+GET {{base_url}}/points/balance/{{client_id}}
+Authorization: Bearer {{access_token}}
+
+### 6.2 Agregar Puntos Manualmente
+POST {{base_url}}/points/add
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "client_id": "{{client_id}}",
+  "points": 100,
+  "description": "Puntos de bonificación por cumpleaños",
+  "expires_at": "2025-10-21T23:59:59Z"
+}
+
+### 6.3 Redimir Puntos
+POST {{base_url}}/points/redeem
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "client_id": "{{client_id}}",
+  "points": 50,
+  "description": "Redención de puntos en compra"
+}
+
+### 6.4 Transferir Puntos
+POST {{base_url}}/points/transfer
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "from_client_id": "{{client_id_1}}",
+  "to_client_id": "{{client_id_2}}",
+  "points": 25,
+  "description": "Transferencia de puntos entre clientes"
+}
+
+### 6.5 Historial de Puntos del Cliente
+GET {{base_url}}/points/history/{{client_id}}?startDate=2024-01-01&endDate=2024-12-31&type=REDEEMED&limit=50
+Authorization: Bearer {{access_token}}
+
+### 6.6 Historial General de Puntos
+GET {{base_url}}/points/history?limit=100&offset=0
+Authorization: Bearer {{access_token}}
+
+### 6.7 Resumen de Puntos
+GET {{base_url}}/points/summary
+Authorization: Bearer {{access_token}}
+
+### 6.8 Puntos Por Expirar
+GET {{base_url}}/points/expiring
+Authorization: Bearer {{access_token}}
+
+### 6.9 Configuración de Puntos
+GET {{base_url}}/points/config
+Authorization: Bearer {{access_token}}
+
+# ================================================================
+# 7. VENTAS (/api/sales)
+# ================================================================
+
+### 7.1 Procesar Venta Simple
+POST {{base_url}}/sales
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "product_id": "{{product_id_1}}",
+      "quantity": 2
+    },
+    {
+      "product_id": "{{product_id_2}}",
+      "quantity": 1
+    }
+  ],
+  "payments": [
+    {
+      "payment_method_id": "{{payment_method_id}}",
+      "amount": 15000
+    }
+  ],
+  "total": 15000,
+  "delivery_type": "PICKUP"
+}
+
+### 7.2 Procesar Venta con Cliente y Puntos
+POST {{base_url}}/sales
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "client_id": "{{client_id}}",
+  "items": [
+    {
+      "product_id": "{{product_id_1}}",
+      "quantity": 3
+    }
+  ],
+  "payments": [
+    {
+      "payment_method_id": "{{payment_method_id}}",
+      "amount": 15000
+    }
+  ],
+  "points_to_redeem": 50,
+  "total": 15000,
+  "discount_amount": 5000,
+  "delivery_type": "PICKUP"
+}
+
+### 7.3 Procesar Venta con Múltiples Pagos
+POST {{base_url}}/sales
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "client_id": "{{client_id}}",
+  "items": [
+    {
+      "product_id": "{{product_id_1}}",
+      "quantity": 2
+    }
+  ],
+  "payments": [
+    {
+      "payment_method_id": "{{cash_payment_id}}",
+      "amount": 10000
+    },
+    {
+      "payment_method_id": "{{card_payment_id}}",
+      "amount": 8000
+    }
+  ],
+  "total": 18000,
+  "delivery_type": "DELIVERY"
+}
+
+### 7.4 Listar Ventas
+GET {{base_url}}/sales?page=1&limit=20&startDate=2024-01-01&endDate=2024-12-31&status=COMPLETED
+Authorization: Bearer {{access_token}}
+
+### 7.5 Obtener Venta por ID
+GET {{base_url}}/sales/{{sale_id}}
+Authorization: Bearer {{access_token}}
+
+### 7.6 Anular Venta
+POST {{base_url}}/sales/{{sale_id}}/void
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "reason": "Cliente solicitó devolución por producto defectuoso"
+}
+
+### 7.7 Resumen de Ventas
+GET {{base_url}}/sales/summary?startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer {{access_token}}
+
+### 7.8 Ventas de Hoy
+GET {{base_url}}/sales/today
+Authorization: Bearer {{access_token}}
+
+### 7.9 Productos Más Vendidos
+GET {{base_url}}/sales/top-products?limit=10&startDate=2024-01-01
+Authorization: Bearer {{access_token}}
+
+### 7.10 Estadísticas Rápidas
+GET {{base_url}}/sales/quick-stats
+Authorization: Bearer {{access_token}}
+
+# ================================================================
+# 8. ÓRDENES (/api/orders)
+# ================================================================
+
+### 8.1 Crear Orden
+POST {{base_url}}/orders
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "client_id": "{{client_id}}",
+  "items": [
+    {
+      "product_id": "{{product_id_1}}",
+      "quantity": 2,
+      "unit_price": 3500
+    }
+  ],
+  "delivery_type": "DELIVERY",
+  "delivery_address": "Calle 123 #45-67",
+  "delivery_notes": "Segundo piso, apartamento 201",
+  "scheduled_delivery": "2024-12-25T15:30:00Z",
+  "notes": "Cliente prefiere entrega en la tarde"
+}
+
+### 8.2 Listar Órdenes
+GET {{base_url}}/orders?status=PENDING&delivery_type=DELIVERY&limit=20
+Authorization: Bearer {{access_token}}
+
+### 8.3 Órdenes Pendientes
+GET {{base_url}}/orders/pending
+Authorization: Bearer {{access_token}}
+
+### 8.4 Órdenes Listas
+GET {{base_url}}/orders/ready
+Authorization: Bearer {{access_token}}
+
+### 8.5 Obtener Orden por ID
+GET {{base_url}}/orders/{{order_id}}
+Authorization: Bearer {{access_token}}
+
+### 8.6 Actualizar Orden
+PUT {{base_url}}/orders/{{order_id}}
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "delivery_address": "Nueva dirección de entrega",
+  "delivery_notes": "Notas actualizadas",
+  "scheduled_delivery": "2024-12-26T16:00:00Z"
+}
+
+### 8.7 Actualizar Estado de Orden
+PATCH {{base_url}}/orders/{{order_id}}/status
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "status": "READY",
+  "notes": "Orden lista para entrega"
+}
+
+### 8.8 Completar Orden
+POST {{base_url}}/orders/{{order_id}}/complete
+Authorization: Bearer {{access_token}}
+
+### 8.9 Entregar Orden
+POST {{base_url}}/orders/{{order_id}}/deliver
+Authorization: Bearer {{access_token}}
+
+### 8.10 Cancelar Orden
+DELETE {{base_url}}/orders/{{order_id}}
+Authorization: Bearer {{access_token}}
+
+# ================================================================
+# 9. ENDPOINTS DE UTILIDAD
+# ================================================================
+
+### 9.1 Health Check
+GET {{base_url}}/../health
+
+### 9.2 Información de la API
+GET {{base_url}}/../api
+
+### 9.3 Documentación Swagger
+GET {{base_url}}/../api-docs
+
+# ================================================================
+# FLUJO COMPLETO DE PRUEBA
+# ================================================================
+
+## Paso 1: Registrar empresa y obtener token
+## Paso 2: Crear métodos de pago (efectivo, tarjeta)
+## Paso 3: Crear productos
+## Paso 4: Crear cliente
+## Paso 5: Procesar venta con puntos
+## Paso 6: Verificar balance de puntos del cliente
+## Paso 7: Crear orden para delivery
+## Paso 8: Ver resumen de ventas
+
+# ================================================================
+# EJEMPLOS DE RESPUESTAS ESPERADAS
+# ================================================================
+
+## Login exitoso:
+{
+  "success": true,
+  "message": "Login exitoso",
+  "data": {
+    "user": {
+      "id": "uuid",
+      "name": "Administrador",
+      "email": "admin@mitienda.com",
+      "role": "ADMIN",
+      "company_id": "uuid"
+    },
+    "tokens": {
+      "accessToken": "jwt_token",
+      "refreshToken": "refresh_token"
+    }
+  }
+}
+
+## Venta procesada:
+{
+  "success": true,
+  "message": "Venta procesada exitosamente",
+  "data": {
+    "sale": {
+      "id": "uuid",
+      "invoice_number": "INV-000001",
+      "total": 15000,
+      "points_earned": 15,
+      "points_redeemed": 50,
+      "status": "COMPLETED"
+    }
+  }
+}
+
+## Balance de puntos:
+{
+  "success": true,
+  "data": {
+    "client_id": "uuid",
+    "current_points": 125,
+    "total_earned": 200,
+    "total_redeemed": 75,
+    "pending_expiration": 50
+  }
+}

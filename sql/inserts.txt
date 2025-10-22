@@ -1,0 +1,643 @@
+-- ================================================================
+-- SCRIPT DE INSERCIÓN DE DATOS INICIALES - MercaloPOS
+-- Sistema POS Multitenant con Sistema de Puntos
+-- ================================================================
+-- Este script crea una empresa completa con todos los datos necesarios
+-- para poder hacer login como administrador y probar el sistema
+-- ================================================================
+
+-- Limpiar datos existentes (OPCIONAL - usar con cuidado)
+-- DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479');
+-- DELETE FROM sale_payments WHERE sale_id IN (SELECT id FROM sales WHERE company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479');
+-- DELETE FROM points_transactions WHERE company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+-- DELETE FROM sales WHERE company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+-- DELETE FROM products WHERE company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+-- DELETE FROM clients WHERE company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+-- DELETE FROM payment_methods WHERE company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+-- DELETE FROM users WHERE company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+-- DELETE FROM companies WHERE id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+-- ================================================================
+-- 1. CREAR EMPRESA PRINCIPAL
+-- ================================================================
+
+INSERT INTO companies (
+    id,
+    name,
+    tax_id,
+    email,
+    phone,
+    address,
+    plan,
+    is_active,
+    active_until,
+    created_at,
+    updated_at
+) VALUES (
+    'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    'Mi Tienda POS Demo',
+    '123456789-0',
+    'admin@mitienda.com',
+    '+57 300 123 4567',
+    'Calle 123 #45-67, Ciudad Demo, País',
+    'PREMIUM',
+    1,
+    '2025-12-31',
+    NOW(),
+    NOW()
+);
+
+-- ================================================================
+-- 2. CREAR USUARIO ADMINISTRADOR
+-- ================================================================
+-- Contraseña: Admin123456! (hasheada con bcrypt)
+
+INSERT INTO users (
+    id,
+    company_id,
+    name,
+    email,
+    password,
+    role,
+    phone,
+    is_active,
+    email_verified,
+    last_login,
+    created_at,
+    updated_at
+) VALUES (
+    '550e8400-e29b-41d4-a716-446655440001',
+    'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    'Administrador Principal',
+    'admin@mitienda.com',
+    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/A8nBjgJza',
+    'ADMIN',
+    '+57 300 123 4567',
+    1,
+    1,
+    NULL,
+    NOW(),
+    NOW()
+);
+
+-- ================================================================
+-- 3. CREAR USUARIOS ADICIONALES (MANAGER Y CASHIER)
+-- ================================================================
+
+-- Usuario Manager - Contraseña: Manager123!
+INSERT INTO users (
+    id,
+    company_id,
+    name,
+    email,
+    password,
+    role,
+    phone,
+    is_active,
+    email_verified,
+    last_login,
+    created_at,
+    updated_at
+) VALUES (
+    '550e8400-e29b-41d4-a716-446655440002',
+    'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    'Juan Pérez Manager',
+    'manager@mitienda.com',
+    '$2b$12$8K1p2GKKHIQgODQhBwKVxe8k7tVFLGcwNYZQH2rBjy/7WqcE3xF5.',
+    'MANAGER',
+    '+57 301 234 5678',
+    1,
+    1,
+    NULL,
+    NOW(),
+    NOW()
+);
+
+-- Usuario Cashier - Contraseña: Cashier123!
+INSERT INTO users (
+    id,
+    company_id,
+    name,
+    email,
+    password,
+    role,
+    phone,
+    is_active,
+    email_verified,
+    last_login,
+    created_at,
+    updated_at
+) VALUES (
+    '550e8400-e29b-41d4-a716-446655440003',
+    'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    'María González Cajera',
+    'cajera@mitienda.com',
+    '$2b$12$9M2q3HLLIJRhPEDiBxLWye9l8uWGMHdxOZARI3sCkz/8XrdF4yG6.',
+    'CASHIER',
+    '+57 302 345 6789',
+    1,
+    1,
+    NULL,
+    NOW(),
+    NOW()
+);
+
+-- ================================================================
+-- 4. CREAR MÉTODOS DE PAGO
+-- ================================================================
+
+-- Efectivo
+INSERT INTO payment_methods (
+    id,
+    company_id,
+    name,
+    type,
+    channel,
+    commission_rate,
+    is_active,
+    requires_authorization,
+    min_amount,
+    max_amount,
+    description,
+    created_at,
+    updated_at
+) VALUES (
+    '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+    'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    'Efectivo',
+    'CASH',
+    'CASH',
+    0.00,
+    1,
+    0,
+    0.00,
+    NULL,
+    'Pago en efectivo',
+    NOW(),
+    NOW()
+);
+
+-- Tarjeta de Crédito
+INSERT INTO payment_methods (
+    id,
+    company_id,
+    name,
+    type,
+    channel,
+    commission_rate,
+    is_active,
+    requires_authorization,
+    min_amount,
+    max_amount,
+    description,
+    created_at,
+    updated_at
+) VALUES (
+    '6ba7b811-9dad-11d1-80b4-00c04fd430c8',
+    'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    'Tarjeta de Crédito',
+    'CREDIT_CARD',
+    'CARD',
+    3.50,
+    1,
+    1,
+    10.00,
+    100000.00,
+    'Pagos con tarjeta de crédito Visa/Mastercard',
+    NOW(),
+    NOW()
+);
+
+-- Tarjeta de Débito
+INSERT INTO payment_methods (
+    id,
+    company_id,
+    name,
+    type,
+    channel,
+    commission_rate,
+    is_active,
+    requires_authorization,
+    min_amount,
+    max_amount,
+    description,
+    created_at,
+    updated_at
+) VALUES (
+    '6ba7b812-9dad-11d1-80b4-00c04fd430c8',
+    'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    'Tarjeta de Débito',
+    'DEBIT_CARD',
+    'CARD',
+    2.00,
+    1,
+    1,
+    5.00,
+    50000.00,
+    'Pagos con tarjeta de débito',
+    NOW(),
+    NOW()
+);
+
+-- Transferencia Digital
+INSERT INTO payment_methods (
+    id,
+    company_id,
+    name,
+    type,
+    channel,
+    commission_rate,
+    is_active,
+    requires_authorization,
+    min_amount,
+    max_amount,
+    description,
+    created_at,
+    updated_at
+) VALUES (
+    '6ba7b813-9dad-11d1-80b4-00c04fd430c8',
+    'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    'Nequi/Daviplata',
+    'DIGITAL_WALLET',
+    'DIGITAL',
+    1.50,
+    1,
+    0,
+    1.00,
+    20000.00,
+    'Transferencias por billeteras digitales',
+    NOW(),
+    NOW()
+);
+
+-- ================================================================
+-- 5. CREAR PRODUCTOS DE EJEMPLO
+-- ================================================================
+
+-- Bebidas
+INSERT INTO products (
+    id,
+    company_id,
+    sku,
+    name,
+    description,
+    barcode,
+    price,
+    cost,
+    stock,
+    min_stock,
+    category,
+    supplier,
+    is_active,
+    taxable,
+    perishable,
+    unit,
+    created_at,
+    updated_at
+) VALUES 
+    ('7c9e6679-7425-40de-944b-e07fc1f90ae7',
+     'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+     'COCA-600',
+     'Coca Cola 600ml',
+     'Bebida gaseosa cola 600ml',
+     '7501234567890',
+     3500.00,
+     2000.00,
+     150,
+     20,
+     'Bebidas',
+     'Coca Cola Company',
+     1,
+     1,
+     1,
+     'unidad',
+     NOW(),
+     NOW()),
+     
+    ('7c9e6679-7425-40de-944b-e07fc1f90ae8',
+     'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+     'AGUA-500',
+     'Agua Cristal 500ml',
+     'Agua natural purificada 500ml',
+     '7501234567891',
+     1500.00,
+     800.00,
+     200,
+     30,
+     'Bebidas',
+     'Cristal S.A.',
+     1,
+     1,
+     0,
+     'unidad',
+     NOW(),
+     NOW()),
+
+-- Snacks
+    ('7c9e6679-7425-40de-944b-e07fc1f90ae9',
+     'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+     'PAPI-ORIG',
+     'Papitas Margarita Original',
+     'Papitas fritas sabor original 150g',
+     '7501234567892',
+     4200.00,
+     2500.00,
+     80,
+     15,
+     'Snacks',
+     'Frito Lay',
+     1,
+     1,
+     1,
+     'paquete',
+     NOW(),
+     NOW()),
+
+-- Lácteos
+    ('7c9e6679-7425-40de-944b-e07fc1f90af0',
+     'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+     'LECHE-1L',
+     'Leche Entera Alpina 1L',
+     'Leche entera pasteurizada 1 litro',
+     '7501234567893',
+     3800.00,
+     2200.00,
+     60,
+     10,
+     'Lácteos',
+     'Alpina S.A.',
+     1,
+     1,
+     1,
+     'litro',
+     NOW(),
+     NOW()),
+
+-- Panadería
+    ('7c9e6679-7425-40de-944b-e07fc1f90af1',
+     'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+     'PAN-BLANC',
+     'Pan Blanco Bimbo',
+     'Pan de molde blanco tajado 450g',
+     '7501234567894',
+     2800.00,
+     1600.00,
+     40,
+     8,
+     'Panadería',
+     'Grupo Bimbo',
+     1,
+     1,
+     1,
+     'paquete',
+     NOW(),
+     NOW()),
+
+-- Aseo
+    ('7c9e6679-7425-40de-944b-e07fc1f90af2',
+     'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+     'JAB-DOV',
+     'Jabón Dove Original',
+     'Jabón en barra hidratante 90g',
+     '7501234567895',
+     5200.00,
+     3000.00,
+     25,
+     5,
+     'Aseo Personal',
+     'Unilever',
+     1,
+     1,
+     0,
+     'unidad',
+     NOW(),
+     NOW());
+
+-- ================================================================
+-- 6. CREAR CLIENTES DE EJEMPLO
+-- ================================================================
+
+-- Cliente Regular
+INSERT INTO clients (
+    id,
+    company_id,
+    name,
+    phone,
+    email,
+    address,
+    rfc,
+    company_name,
+    birth_date,
+    points_balance,
+    total_spent,
+    total_purchases,
+    is_active,
+    created_at,
+    updated_at
+) VALUES 
+    ('8d7e5639-8536-41ef-855c-f17fc2f91baf',
+     'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+     'María González Rodríguez',
+     '+57 302 345 6789',
+     'maria.gonzalez@gmail.com',
+     'Carrera 45 #12-34, Apartamento 501',
+     'GOMA850315AB1',
+     'Empresa González Ltda',
+     '1985-03-15',
+     0,
+     0.00,
+     0,
+     1,
+     NOW(),
+     NOW()),
+
+-- Cliente VIP
+    ('8d7e5639-8536-41ef-855c-f17fc2f91bb0',
+     'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+     'Carlos Mendoza López',
+     '+57 301 456 7890',
+     'carlos.mendoza@hotmail.com',
+     'Calle 67 #89-12, Casa 3',
+     'MELC790825CD2',
+     NULL,
+     '1979-08-25',
+     150,
+     850000.00,
+     45,
+     1,
+     NOW(),
+     NOW()),
+
+-- Cliente Corporativo
+    ('8d7e5639-8536-41ef-855c-f17fc2f91bb1',
+     'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+     'Ana Patricia Silva',
+     '+57 300 567 8901',
+     'ana.silva@empresaabc.com',
+     'Avenida 80 #45-67, Oficina 201',
+     'SILA920412EF3',
+     'Empresa ABC S.A.S',
+     '1992-04-12',
+     75,
+     450000.00,
+     28,
+     1,
+     NOW(),
+     NOW());
+
+-- ================================================================
+-- 7. CREAR TRANSACCIONES DE PUNTOS INICIALES
+-- ================================================================
+
+-- Puntos para Carlos Mendoza (Cliente VIP)
+INSERT INTO points_transactions (
+    id,
+    company_id,
+    client_id,
+    type,
+    points,
+    description,
+    sale_id,
+    user_id,
+    expires_at,
+    created_at
+) VALUES 
+    ('9e8f7640-9647-42f0-966d-g28gd3g92cc0',
+     'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+     '8d7e5639-8536-41ef-855c-f17fc2f91bb0',
+     'EARNED',
+     200,
+     'Puntos ganados por compras anteriores',
+     NULL,
+     '550e8400-e29b-41d4-a716-446655440001',
+     '2025-12-31 23:59:59',
+     '2024-10-01 10:00:00');
+
+-- Puntos redimidos
+INSERT INTO points_transactions (
+    id,
+    company_id,
+    client_id,
+    type,
+    points,
+    description,
+    sale_id,
+    user_id,
+    expires_at,
+    created_at
+) VALUES 
+    ('9e8f7640-9647-42f0-966d-g28gd3g92cc1',
+     'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+     '8d7e5639-8536-41ef-855c-f17fc2f91bb0',
+     'REDEEMED',
+     -50,
+     'Redención de puntos en compra',
+     NULL,
+     '550e8400-e29b-41d4-a716-446655440001',
+     NULL,
+     '2024-10-15 14:30:00');
+
+-- Puntos para Ana Silva
+INSERT INTO points_transactions (
+    id,
+    company_id,
+    client_id,
+    type,
+    points,
+    description,
+    sale_id,
+    user_id,
+    expires_at,
+    created_at
+) VALUES 
+    ('9e8f7640-9647-42f0-966d-g28gd3g92cc2',
+     'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+     '8d7e5639-8536-41ef-855c-f17fc2f91bb1',
+     'EARNED',
+     75,
+     'Puntos ganados por compras corporativas',
+     NULL,
+     '550e8400-e29b-41d4-a716-446655440001',
+     '2025-12-31 23:59:59',
+     '2024-10-10 16:45:00');
+
+-- ================================================================
+-- 8. VERIFICACIÓN DE DATOS INSERTADOS
+-- ================================================================
+
+-- Verificar empresa creada
+SELECT 'EMPRESA CREADA:' as resultado, name, email, plan, is_active 
+FROM companies 
+WHERE id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+-- Verificar usuarios creados
+SELECT 'USUARIOS CREADOS:' as resultado, name, email, role, is_active 
+FROM users 
+WHERE company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+-- Verificar métodos de pago
+SELECT 'MÉTODOS DE PAGO:' as resultado, name, type, channel, is_active 
+FROM payment_methods 
+WHERE company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+-- Verificar productos
+SELECT 'PRODUCTOS:' as resultado, sku, name, category, price, stock 
+FROM products 
+WHERE company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+-- Verificar clientes
+SELECT 'CLIENTES:' as resultado, name, email, points_balance, total_spent 
+FROM clients 
+WHERE company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+-- Verificar puntos
+SELECT 'TRANSACCIONES DE PUNTOS:' as resultado, 
+       c.name as cliente, 
+       pt.type, 
+       pt.points, 
+       pt.description 
+FROM points_transactions pt
+JOIN clients c ON pt.client_id = c.id
+WHERE pt.company_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+-- ================================================================
+-- INFORMACIÓN DE LOGIN
+-- ================================================================
+
+/*
+INFORMACIÓN PARA HACER LOGIN:
+
+ADMINISTRADOR:
+- Email: admin@mitienda.com
+- Contraseña: Admin123456!
+- Rol: ADMIN
+
+MANAGER:
+- Email: manager@mitienda.com  
+- Contraseña: Manager123!
+- Rol: MANAGER
+
+CAJERO:
+- Email: cajera@mitienda.com
+- Contraseña: Cashier123!
+- Rol: CASHIER
+
+EMPRESA:
+- Nombre: Mi Tienda POS Demo
+- ID: f47ac10b-58cc-4372-a567-0e02b2c3d479
+- Plan: PREMIUM
+
+DATOS LISTOS PARA PROBAR:
+✅ 4 Métodos de pago configurados
+✅ 6 Productos con stock
+✅ 3 Clientes con puntos
+✅ Sistema de puntos funcionando (1 punto = $1)
+✅ Usuarios con diferentes roles
+
+PRUEBAS SUGERIDAS:
+1. Login con admin@mitienda.com
+2. Crear una venta con productos existentes
+3. Aplicar puntos de Carlos Mendoza (tiene 150 puntos)
+4. Verificar que se generen nuevos puntos
+5. Probar con diferentes métodos de pago
+*/

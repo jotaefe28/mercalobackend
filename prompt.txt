@@ -1,0 +1,452 @@
+/**
+ * PROMPT PARA IA - GENERACIÓN BACKEND SISTEMA POS MULTITENANT
+ * 
+ * Actúa como un desarrollador backend senior y experto en arquitectura de software. 
+ * Necesito que generes la estructura completa de un backend para un sistema POS (Point of Sale) 
+ * multitenant robusto y escalable.
+ * 
+ * **Sistema POS Multitenant** es una plataforma que permite a múltiples empresas gestionar 
+ * sus ventas, inventario, clientes y puntos de fidelización de manera independiente y segura.
+ */
+
+// ==================== ESPECIFICACIONES TÉCNICAS ====================
+
+/**
+ * Stack Tecnológico Obligatorio:
+ * - Node.js v18+ con Express.js
+ * - MySQL con pool de conexiones y stored procedures
+ * - JWT con cookies httpOnly + manejo de refresh tokens
+ * - bcrypt para hash de contraseñas (salt rounds 12+)
+ * - UUID v4 para IDs únicos
+ * - Validación con Joi o express-validator
+ * - Testing con Jest
+ * - Documentación con Swagger
+ * - Winston para logging estructurado
+ * - Rate limiting con express-rate-limit
+ * - Helmet.js para headers de seguridad
+ * - CORS configurado dinámicamente
+ */
+
+/**
+ * Arquitectura Base Multitenant:
+ * - Estructura MVC modular y escalable
+ * - Middleware de autenticación JWT robusto
+ * - Pool de conexiones MySQL optimizado
+ * - Manejo de errores centralizado
+ * - Stored procedures para operaciones críticas (ventas, inventario)
+ * - Sistema de roles y permisos granular
+ * - Aislamiento total de datos por company_id
+ * - Validación de entrada en todos los endpoints
+ * - Middleware tenant para extracción automática de company_id
+ */
+
+// ==================== CONFIGURACIÓN BASE DE DATOS ====================
+
+/**
+ * Variables de entorno (.env) - USAR ESTA CONFIGURACIÓN:
+ * 
+ * NODE_ENV='develop'
+ * PORT='3001' 
+ * DB_HOST="107.180.114.25"
+ * DB_PORT="3306"
+ * DB_NAME="pos"
+ * DB_USER="trelloudenar"
+ * DB_PASSWORD="trelloudenar#"
+ * SESSION_SECRET="1550e8ba9977bd236d93d112358b241968af8a99e77aa4e05d7dac92242d097ebbcb0fafd73be787652a4bca91b0c5ae9283af8a051fe533f8fe67f6a8cf5ad5"
+ * REFRESH_TOKEN_SECRET="1550e8ba9977bd236d93d112358b241968af8a99e77aa4e05d7dac92242d097ebbcb0fafd73be787652a4bca91b0c5ae9283af8a051fe533f8fe67f6a8cf5ad5"
+ * REDIS_PASSWORD=""
+ * JWT_SECRET="2925b587b27fa01cf3d49b1e001b931ac5e4e92f6c8c2f96ec13f23af57684af79ab2c8ad1c63b800dd5f23736aec11c0a5705ca36be119a5cb59471a5eccd92"
+ * JWT_EXPIRATION="24h"
+ * ALLOWED_ORIGINS="http://localhost:5173"
+ * LOG_LEVEL="info"
+ */
+
+// ==================== FUNCIONALIDADES CORE ====================
+
+/**
+ * 1. Sistema de Autenticación Multitenant:
+ * - Registro/login con company_id obligatorio
+ * - JWT con company_id embebido
+ * - Refresh tokens seguros
+ * - Roles: ADMIN, USER, MANAGER
+ * - Rate limiting en auth endpoints
+ * - Bloqueo temporal tras intentos fallidos
+ * 
+ * 2. Gestión de Empresas (Companies):
+ * - CRUD completo para empresas
+ * - Planes: BASIC, PREMIUM, ENTERPRISE
+ * - Fecha de vencimiento (active_until)
+ * - Tax ID único por empresa
+ * - Configuraciones personalizables
+ * 
+ * 3. Gestión de Usuarios:
+ * - CRUD con aislamiento por company_id
+ * - Roles granulares por empresa
+ * - Último login tracking
+ * - Email único por empresa
+ * 
+ * 4. Gestión de Productos e Inventario:
+ * - CRUD con SKU único por empresa
+ * - Control de stock en tiempo real
+ * - Movimientos de inventario auditables
+ * - Búsqueda full-text optimizada
+ * - Prevención de stock negativo con triggers
+ * - Precios base y actuales
+ * 
+ * 5. Gestión de Clientes:
+ * - CRUD con documento único por empresa
+ * - Sistema de puntos de fidelización
+ * - Búsqueda rápida por nombre/teléfono/documento
+ * - Historial de puntos completo
+ * 
+ * 6. Sistema de Ventas Avanzado:
+ * - Registro de ventas con stored procedures
+ * - Múltiples métodos de pago
+ * - Tipos de entrega: store, delivery
+ * - Estados: completed, pending, void
+ * - Cálculo automático de impuestos
+ * - Generación automática de puntos
+ * - **NUEVA FUNCIONALIDAD: Redención de puntos en ventas**
+ * 
+ * 7. Sistema de Puntos Mejorado:
+ * - Acumulación automática en compras (1 punto = $1)
+ * - **Redención de puntos como descuento en ventas**
+ * - Historial completo de movimientos
+ * - Consulta por teléfono/documento
+ * - Triggers automáticos para actualización
+ * 
+ * 8. Métodos de Pago:
+ * - Configurables por empresa
+ * - Canales: cash, qr, card, transfer, later
+ * - Soporte para pagos múltiples
+ * - Referencias externas
+ * 
+ * 9. Sistema de Entregas:
+ * - Tracking de pedidos
+ * - Estados: PENDING, IN_TRANSIT, DELIVERED
+ * - Direcciones de envío
+ * - Responsables asignados
+ */
+
+// ==================== ESTRUCTURA DE DIRECTORIOS REQUERIDA ====================
+
+/**
+ * pos-backend/
+ * ├── src/
+ * │   ├── app.js
+ * │   ├── server.js
+ * │   ├── config/
+ * │   │   ├── database.js (pool MySQL)
+ * │   │   ├── tenantResolver.js
+ * │   │   └── swagger.js
+ * │   ├── controllers/
+ * │   │   ├── auth.controller.js
+ * │   │   ├── user.controller.js
+ * │   │   ├── company.controller.js
+ * │   │   ├── product.controller.js
+ * │   │   ├── client.controller.js
+ * │   │   ├── sale.controller.js
+ * │   │   ├── points.controller.js
+ * │   │   ├── payment_method.controller.js
+ * │   │   ├── orders.controller.js
+ * │   │   └── customersController.js
+ * │   ├── models/
+ * │   │   ├── user.model.js
+ * │   │   ├── company.model.js
+ * │   │   ├── product.model.js
+ * │   │   ├── client.model.js
+ * │   │   ├── sale.model.js
+ * │   │   ├── points.model.js
+ * │   │   ├── payment_method.model.js
+ * │   │   └── orders_to_collect.model.js
+ * │   ├── routes/
+ * │   │   ├── auth.routes.js
+ * │   │   ├── user.routes.js
+ * │   │   ├── company.routes.js
+ * │   │   ├── product.routes.js
+ * │   │   ├── client.routes.js
+ * │   │   ├── sale.routes.js
+ * │   │   ├── points.routes.js
+ * │   │   ├── payment_method.routes.js
+ * │   │   ├── orders.routes.js
+ * │   │   └── customersRoutes.js
+ * │   ├── middlewares/
+ * │   │   ├── auth.middleware.js
+ * │   │   ├── tenant.middleware.js (extrae company_id del JWT)
+ * │   │   ├── error.middleware.js
+ * │   │   ├── validation.middleware.js
+ * │   │   ├── rateLimiter.middleware.js
+ * │   │   └── security.middleware.js
+ * │   ├── services/
+ * │   │   ├── auth.service.js
+ * │   │   ├── user.service.js
+ * │   │   ├── company.service.js
+ * │   │   ├── product.service.js
+ * │   │   ├── client.service.js
+ * │   │   ├── sale.service.js
+ * │   │   ├── points.service.js
+ * │   │   ├── payment_method.service.js
+ * │   │   ├── orders.service.js
+ * │   │   └── customerPointsService.js
+ * │   ├── utils/
+ * │   │   ├── jwt.js
+ * │   │   ├── bcrypt.js
+ * │   │   ├── validators.js
+ * │   │   ├── payment.js
+ * │   │   └── constants.js
+ * │   └── validators/
+ * │       ├── authValidators.js
+ * │       ├── userValidators.js
+ * │       ├── productValidators.js
+ * │       ├── saleValidators.js
+ * │       └── pointsValidators.js
+ * ├── sql/
+ * │   ├── schema.sql (estructura completa)
+ * │   ├── stored_procedures/
+ * │   │   ├── register_sale.sql
+ * │   │   ├── redeem_points.sql (NUEVA)
+ * │   │   ├── cancel_sale.sql
+ * │   │   └── adjust_stock.sql
+ * │   ├── triggers/
+ * │   │   ├── points_triggers.sql
+ * │   │   ├── inventory_triggers.sql
+ * │   │   └── stock_validation.sql
+ * │   └── seeds/
+ * │       ├── companies_demo.sql
+ * │       ├── users_demo.sql
+ * │       ├── products_demo.sql
+ * │       └── payment_methods.sql
+ * ├── tests/
+ * │   ├── auth.test.js
+ * │   ├── sales.test.js
+ * │   ├── points.test.js
+ * │   └── multitenancy.test.js
+ * ├── docs/
+ * │   ├── swagger.yaml
+ * │   └── database-design.md
+ * ├── package.json
+ * ├── .env.example
+ * └── README.md
+ */
+
+// ==================== REQUERIMIENTOS DE SEGURIDAD CRÍTICOS ====================
+
+/**
+ * Implementar OBLIGATORIAMENTE:
+ * 
+ * 1. Aislamiento Multitenant:
+ *    - Todas las consultas DEBEN incluir company_id
+ *    - Middleware tenant automático en todas las rutas
+ *    - Validación estricta de pertenencia de recursos
+ * 
+ * 2. Validación robusta:
+ *    - Joi/express-validator en todos los endpoints
+ *    - Sanitización contra SQL injection
+ *    - Validación de tipos y rangos
+ * 
+ * 3. Rate limiting diferenciado:
+ *    - Auth endpoints: 5 intentos/15min
+ *    - API general: 100 req/min
+ *    - Ventas: 20 req/min
+ * 
+ * 4. Headers de seguridad:
+ *    - Helmet.js completo
+ *    - CORS configurado por entorno
+ *    - CSP headers apropiados
+ * 
+ * 5. Logging de seguridad:
+ *    - Winston con niveles apropiados
+ *    - Log de intentos de acceso fallidos
+ *    - Auditoría de operaciones críticas
+ * 
+ * 6. Cookies JWT seguros:
+ *    - httpOnly: true
+ *    - secure: true en producción
+ *    - sameSite: 'Strict'
+ *    - maxAge apropiado
+ * 
+ * 7. Encriptación robusta:
+ *    - bcrypt con salt rounds 12+
+ *    - Secrets largos y únicos
+ *    - Rotación de tokens
+ */
+
+// ==================== FUNCIONALIDADES AVANZADAS ====================
+
+/**
+ * Sistema de Puntos con Redención:
+ * - Acumulación: 1 punto por cada $1 gastado
+ * - Redención: Descuento directo en ventas
+ * - Conversión: 1 punto = $1 de descuento
+ * - Validaciones: No permitir más puntos que el total de la venta
+ * - Historial: Log completo de acumulaciones y redenciones
+ * 
+ * Cache Strategy:
+ * - Pool de conexiones optimizado
+ * - Consultas preparadas para mejor performance
+ * - Índices en campos de búsqueda frecuente
+ * 
+ * Transacciones ACID:
+ * - Stored procedures para operaciones críticas
+ * - Rollback automático en errores
+ * - Consistencia de datos garantizada
+ * 
+ * Auditoría completa:
+ * - Log de todas las operaciones de venta
+ * - Historial de movimientos de inventario
+ * - Tracking de cambios en puntos de clientes
+ */
+
+// ==================== ENDPOINTS PRINCIPALES ESPERADOS ====================
+
+/**
+ * Auth:
+ * POST /api/auth/register
+ * POST /api/auth/login
+ * POST /api/auth/logout
+ * POST /api/auth/refresh
+ * 
+ * Users:
+ * GET /api/users
+ * POST /api/users
+ * GET /api/users/:id
+ * PUT /api/users/:id
+ * DELETE /api/users/:id
+ * 
+ * Companies:
+ * GET /api/companies
+ * POST /api/companies
+ * GET /api/companies/:id
+ * PUT /api/companies/:id
+ * 
+ * Products:
+ * GET /api/products?page=1&limit=10&search=
+ * POST /api/products
+ * GET /api/products/:id
+ * PUT /api/products/:id
+ * DELETE /api/products/:id
+ * GET /api/products/search/:term
+ * 
+ * Clients:
+ * GET /api/clients?page=1&limit=20
+ * POST /api/clients
+ * GET /api/clients/search/:term
+ * GET /api/clients/quick-search/:term
+ * 
+ * Sales:
+ * GET /api/sales
+ * POST /api/sales/register
+ * GET /api/sales/:id
+ * POST /api/sales/:id/cancel
+ * 
+ * Points (MEJORADO):
+ * GET /api/points/customer/:identifier (teléfono o documento)
+ * POST /api/points/redeem (NUEVO - redimir puntos en venta)
+ * GET /api/points/history/:customerId
+ * 
+ * Payment Methods:
+ * GET /api/payment-methods
+ * POST /api/payment-methods
+ * PUT /api/payment-methods/:id
+ * 
+ * Orders:
+ * GET /api/orders
+ * POST /api/orders
+ * PUT /api/orders/:id/status
+ */
+
+// ==================== NUEVA FUNCIONALIDAD: REDENCIÓN DE PUNTOS ====================
+
+/**
+ * REQUERIMIENTO CRÍTICO: Sistema de Redención de Puntos
+ * 
+ * La lógica actual NO contempla la redención de puntos como descuento en ventas.
+ * DEBE implementarse:
+ * 
+ * 1. Endpoint de redención:
+ *    POST /api/points/redeem
+ *    Body: {
+ *      customer_id: "uuid",
+ *      points_to_redeem: 150,
+ *      sale_total: 200.00
+ *    }
+ * 
+ * 2. Validaciones de redención:
+ *    - Cliente debe tener suficientes puntos
+ *    - Puntos a redimir no pueden exceder el total de venta
+ *    - Conversión 1:1 (1 punto = $1 descuento)
+ * 
+ * 3. Stored procedure para redención:
+ *    CALL redeem_points(customer_id, points_amount, sale_id)
+ *    - Actualizar customer_points_log con cambio negativo
+ *    - Actualizar current_points del cliente
+ *    - Registrar en sale el descuento aplicado
+ * 
+ * 4. Modificar registro de ventas:
+ *    - Agregar campo points_redeemed a sales
+ *    - Calcular total_final = subtotal - points_redeemed + taxes
+ *    - Mostrar descuento en receipt/factura
+ * 
+ * 5. Historial de redenciones:
+ *    - Log en customer_points_log con reason: 'Redemption'
+ *    - change_amount negativo
+ *    - Referencia a sale_id correspondiente
+ */
+
+// ==================== CRITERIOS DE CALIDAD ====================
+
+/**
+ * El código debe incluir:
+ * - Comentarios claros en funciones críticas
+ * - Manejo de errores específicos por tipo
+ * - Validaciones exhaustivas en todos los niveles
+ * - Tests unitarios para lógica de negocio crítica
+ * - Documentación Swagger completa con ejemplos
+ * - Logging estructurado para debugging
+ 
+ * 
+ * Performance:
+ * - Índices optimizados en MySQL para búsquedas
+ * - Paginación en todos los listados
+ * - Consultas preparadas para mejor cache
+ * - Pool de conexiones configurado apropiadamente
+ * 
+ * Escalabilidad:
+ * - Código modular y reutilizable
+ * - Separación clara de responsabilidades
+ * - Middleware reutilizable para multitenancy
+ * - Stored procedures para lógica compleja
+ * - Configuración lista para balanceadores
+ * 
+ * Mantenibilidad:
+ * - Estructura de carpetas clara y consistente
+ * - Naming conventions claras
+ * - Servicios desacoplados
+ * - Models con responsabilidades específicas
+ */
+
+// ==================== INSTRUCCIÓN FINAL ====================
+
+/**
+ * GENERA EL BACKEND COMPLETO del sistema POS multitenant siguiendo estas especificaciones:
+ * 
+ * PRIORIDADES:
+ * 1. SEGURIDAD (aislamiento multitenant, validaciones, rate limiting)
+ * 2. FUNCIONALIDAD (sistema de puntos CON redención en ventas)
+ * 3. ESCALABILIDAD (stored procedures, índices, modularidad)
+ * 4. MANTENIBILIDAD (clean code, documentación, tests)
+ * 
+ * INCLUIR OBLIGATORIAMENTE:
+ * - Toda la estructura de carpetas especificada
+ * - Configuración .env exacta proporcionada
+ * - Sistema de redención de puntos completo
+ * - Stored procedures para operaciones críticas
+ * - Middleware de tenant en todas las rutas
+ * - Validaciones robustas con Joi
+ * - Tests básicos para funcionalidades core
+ * - Documentación Swagger completa
+ * - Scripts de setup y seeds de datos demo
+ * 
+ * El sistema debe ser production-ready desde el inicio con todas las mejores prácticas
+ * de seguridad, performance y escalabilidad implementadas.
+ */
