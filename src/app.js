@@ -13,6 +13,15 @@ const errorHandler = require('./middlewares/errorHandler');
 const notFoundHandler = require('./middlewares/notFound');
 const { setupSwagger } = require('./config/swagger');
 
+// Importar middlewares de seguridad mejorados
+const { 
+  apiRateLimit, 
+  authRateLimit, 
+  registerRateLimit,
+  speedLimiter
+} = require('./middlewares/rateLimiter.simple');
+const { sanitizeInput } = require('./middlewares/validation.strict');
+
 // Importar rutas
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -22,6 +31,7 @@ const clientRoutes = require('./routes/clients');
 const pointsRoutes = require('./routes/points');
 const paymentMethodRoutes = require('./routes/paymentMethods');
 const orderRoutes = require('./routes/orders');
+const testRoutes = require('./routes/test');
 
 const app = express();
 
@@ -61,30 +71,39 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With',
+    'X-Company-Id',
+    'X-Csrf-Token',
+    'Accept',
+    'Origin'
+  ],
+  exposedHeaders: [
+    'RateLimit-Limit',
+    'RateLimit-Remaining', 
+    'RateLimit-Reset',
+    'X-Total-Count'
+  ]
 };
 
 app.use(cors(corsOptions));
 
+// Middleware para manejar preflight OPTIONS requests
+app.options('*', cors(corsOptions));
+
 // Compresión de respuestas
 app.use(compression());
 
-// Rate limiting global
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 1000, // límite de 1000 requests por ventana por IP
-  message: {
-    error: 'Demasiadas solicitudes desde esta IP, por favor intenta de nuevo más tarde.'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req, res) => {
-    // No aplicar rate limiting en desarrollo
-    return process.env.NODE_ENV === 'development';
-  }
-});
+// Sanitización de entrada
+app.use(sanitizeInput);
 
-app.use(globalLimiter);
+// Speed limiter - Ralentiza requests progresivamente
+app.use(speedLimiter);
+
+// Rate limiting general para toda la API
+app.use('/api', apiRateLimit);
 
 // Parseo de JSON y URL encoded
 app.use(express.json({ limit: '10mb' }));
@@ -139,8 +158,8 @@ app.get('/api', (req, res) => {
   });
 });
 
-// Rutas de la API
-app.use('/api/auth', authRoutes);
+// Rutas de la API con rate limiting específico
+app.use('/api/auth', authRateLimit, authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/sales', saleRoutes);
@@ -148,6 +167,9 @@ app.use('/api/clients', clientRoutes);
 app.use('/api/points', pointsRoutes);
 app.use('/api/payment-methods', paymentMethodRoutes);
 app.use('/api/orders', orderRoutes);
+
+// Rutas de testing (solo en desarrollo)
+app.use('/api/test', testRoutes);
 
 // Configurar documentación Swagger
 setupSwagger(app);

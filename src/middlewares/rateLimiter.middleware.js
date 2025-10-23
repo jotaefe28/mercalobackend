@@ -3,10 +3,11 @@
  * Sistema POS Multitenant
  * 
  * Implementa limitación de velocidad diferenciada por tipo de endpoint
- * para prevenir abuso y garantizar disponibilidad del servicio
+ * para prevenir abuso, ataques DDoS y garantizar disponibilidad del servicio
  */
 
 const rateLimit = require('express-rate-limit');
+const slowDown = require('express-slow-down');
 const { logger } = require('../config/database');
 
 /**
@@ -30,13 +31,11 @@ const createRateLimitMessage = (type, maxRequests, windowMs) => {
 };
 
 /**
- * Función para generar clave de rate limiting
- * Combina IP y company_id si está disponible para mejor control
+ * Función para generar clave de rate limiting simplificada
+ * Solo usa IP para evitar problemas con IPv6
  */
 const generateKey = (req) => {
-  const ip = req.ip || req.connection.remoteAddress;
-  const companyId = req.user?.company_id || req.tenant?.companyId || 'anonymous';
-  return `${ip}:${companyId}`;
+  return req.ip || req.connection.remoteAddress || 'unknown';
 };
 
 /**
@@ -155,6 +154,126 @@ const pointsRateLimit = rateLimit({
 });
 
 /**
+ * Rate limiting estricto para registro de empresas
+ * Previene creación masiva de cuentas
+ */
+const registerRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hora
+  max: 3, // Solo 3 registros por IP por hora
+  keyGenerator: (req) => req.ip, // Solo por IP para registros
+  handler: (req, res) => {
+    logger.warn('Rate limit de registro excedido', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      companyName: req.body?.company?.name,
+      email: req.body?.user?.email
+    });
+    
+    res.status(429).json({
+      success: false,
+      message: 'Demasiados intentos de registro desde esta IP',
+      error: {
+        code: 'REGISTER_RATE_LIMIT_EXCEEDED',
+        details: [
+          'Límite: 3 registros por hora',
+          'Intente nuevamente en 1 hora',
+          'Si necesita registrar múltiples empresas, contacte soporte'
+        ]
+      }
+    });
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+/**
+ * Speed Limiter - Ralentiza requests progresivamente
+ * Aplica delay incremental cuando se excede el umbral
+ */
+const speedLimiter = slowDown({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  delayAfter: 100, // Después de 100 requests, empezar a ralentizar
+  delay: (hits) => Math.min((hits - 100) * 250, 10000), // Agregar 250ms por cada request adicional
+  maxDelayMs: 10000 // Máximo delay de 10 segundos
+  // Usar keyGenerator por defecto para evitar problemas IPv6
+});
+
+/**
+ * Rate limiting para endpoints de reportes
+ * Limita generación de reportes pesados
+ */
+const reportRateLimit = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 5, // Solo 5 reportes por minuto
+  keyGenerator: generateKey,
+  handler: (req, res) => {
+    logger.warn('Rate limit de reportes excedido', {
+      ip: req.ip,
+      userId: req.user?.id,
+      companyId: req.tenant?.companyId,
+      reportType: req.path
+    });
+    
+    res.status(429).json({
+      success: false,
+      message: 'Demasiadas solicitudes de reportes',
+      error: {
+        code: 'REPORT_RATE_LIMIT_EXCEEDED',
+        details: [
+          'Límite: 5 reportes por minuto',
+          'Los reportes consumen muchos recursos',
+          'Intente nuevamente en 1 minuto'
+        ]
+      }
+    });
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+/**
+ * Rate limiting para operaciones de escritura críticas
+ * Previene spam de operaciones POST/PUT/DELETE
+ */
+const criticalWriteRateLimit = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 60, // 60 operaciones críticas por minuto
+  keyGenerator: generateKey,
+  skip: (req) => {
+    // Solo aplicar a operaciones de escritura críticas
+    const criticalPaths = ['/sales', '/payments', '/orders', '/products'];
+    const isCriticalPath = criticalPaths.some(path => req.path.includes(path));
+    const isWriteOperation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method);
+    
+    return !(isCriticalPath && isWriteOperation);
+  },
+  handler: (req, res) => {
+    logger.error('Rate limit de escritura crítica excedido', {
+      ip: req.ip,
+      path: req.path,
+      method: req.method,
+      userId: req.user?.id,
+      companyId: req.tenant?.companyId
+    });
+    
+    res.status(429).json({
+      success: false,
+      message: 'Demasiadas operaciones críticas',
+      error: {
+        code: 'CRITICAL_WRITE_RATE_LIMIT_EXCEEDED',
+        details: [
+          'Límite: 60 operaciones críticas por minuto',
+          'Esto incluye ventas, pagos, órdenes y productos',
+          'Intente nuevamente en 1 minuto'
+        ]
+      }
+    });
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+/**
  * Rate limiting dinámico basado en el plan de la empresa
  * @param {string} operation - Tipo de operación
  */
@@ -261,6 +380,10 @@ module.exports = {
   searchRateLimit,
   adminRateLimit,
   pointsRateLimit,
+  registerRateLimit,
+  speedLimiter,
+  reportRateLimit,
+  criticalWriteRateLimit,
   dynamicRateLimit,
   rateLimitLogger,
   webhookRateLimit

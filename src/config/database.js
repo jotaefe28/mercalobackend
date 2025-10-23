@@ -36,9 +36,6 @@ const poolConfig = {
   // Configuración del pool
   connectionLimit: 20,        // Máximo 20 conexiones simultáneas
   queueLimit: 0,             // Sin límite en la cola
-  acquireTimeout: 60000,     // Timeout para obtener conexión: 60s
-  timeout: 60000,            // Timeout para consultas: 60s
-  reconnect: true,           // Reconexión automática
   
   // Configuración de seguridad
   ssl: false,                // SSL deshabilitado para desarrollo
