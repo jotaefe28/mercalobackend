@@ -21,14 +21,17 @@ class CompanyModel {
       
       const query = `
         INSERT INTO companies (
-          id, name, tax_id, plan, active_until, is_active, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          id, name, tax_id, email, phone, address, plan, active_until, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       
       const params = [
         id,
         companyData.name,
         companyData.tax_id,
+        companyData.email,
+        companyData.phone || null,
+        companyData.address || null,
         companyData.plan || 'BASIC',
         companyData.active_until || null,
         true,
@@ -61,6 +64,9 @@ class CompanyModel {
           id,
           name,
           tax_id,
+          email,
+          phone,
+          address,
           plan,
           active_until,
           is_active,
@@ -93,6 +99,9 @@ class CompanyModel {
           id,
           name,
           tax_id,
+          email,
+          phone,
+          address,
           plan,
           active_until,
           is_active,
@@ -165,6 +174,9 @@ class CompanyModel {
           id,
           name,
           tax_id,
+          email,
+          phone,
+          address,
           plan,
           active_until,
           is_active,
@@ -207,7 +219,7 @@ class CompanyModel {
    */
   static async update(id, updateData) {
     try {
-      const allowedFields = ['name', 'tax_id', 'plan', 'active_until', 'is_active'];
+      const allowedFields = ['name', 'tax_id', 'email', 'phone', 'address', 'plan', 'active_until', 'is_active'];
       const updateFields = [];
       const params = [];
       

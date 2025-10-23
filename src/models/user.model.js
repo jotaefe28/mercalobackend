@@ -28,9 +28,9 @@ class UserModel {
       
       const query = `
         INSERT INTO users (
-          id, company_id, name, email, password_hash, role, 
-          is_active, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, company_id, name, email, phone, password, role, 
+          is_active, created_by, updated_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       
       const params = [
@@ -38,12 +38,24 @@ class UserModel {
         companyId,
         userData.name,
         userData.email,
+        userData.phone ? userData.phone : null,
         hashedPassword,
         userData.role || 'USER',
         true,
+        null, // created_by (será null para el primer admin)
+        null, // updated_by (será null para el primer admin)
         now,
         now
       ];
+
+      // Verificar que no haya parámetros undefined
+      const hasUndefined = params.some(param => param === undefined);
+      if (hasUndefined) {
+        logger.error('Parámetro undefined detectado:', {
+          params: params.map((p, i) => ({ index: i, value: p, type: typeof p }))
+        });
+        throw new Error('Datos de usuario incompletos');
+      }
       
       await executeQuery(query, params, 'Crear usuario');
       
@@ -117,10 +129,13 @@ class UserModel {
           company_id,
           name,
           email,
-          password_hash,
+          phone,
+          password,
           role,
           is_active,
           last_login,
+          created_by,
+          updated_by,
           created_at,
           updated_at
         FROM users 
@@ -162,9 +177,12 @@ class UserModel {
           company_id,
           name,
           email,
+          phone,
           role,
           is_active,
           last_login,
+          created_by,
+          updated_by,
           created_at,
           updated_at
         FROM users 
@@ -304,7 +322,7 @@ class UserModel {
       if (updateData.password) {
         const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
         const hashedPassword = await bcrypt.hash(updateData.password, saltRounds);
-        updateFields.push('password_hash = ?');
+        updateFields.push('password = ?');
         params.push(hashedPassword);
       }
       

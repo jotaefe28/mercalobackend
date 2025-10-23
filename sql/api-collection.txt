@@ -21,19 +21,39 @@ Content-Type: application/json
 
 {
   "company": {
-    "name": "Mi Tienda POS",
-    "tax_id": "123456789-0",
-    "email": "admin@mitienda.com",
+    "name": "Mi Nueva Tienda POS",
+    "tax_id": "987654321-1",
+    "email": "admin@nuevatienda.com",
     "phone": "+57 300 123 4567",
     "address": "Calle 123 #45-67, Ciudad"
   },
-  "admin": {
+  "user": {
     "name": "Administrador Principal",
-    "email": "admin@mitienda.com",
+    "email": "admin@nuevatienda.com",
     "password": "Admin123456!",
     "confirmPassword": "Admin123456!"
   }
 }
+
+### respuesta ok 
+{
+    "success": true,
+    "message": "Recurso creado exitosamente",
+    "data": {
+        "company": {
+            "id": "9715672a-1a30-424d-8906-0c99b9014017",
+            "name": "Mi Nueva Tienda POS",
+            "plan": "BASIC"
+        },
+        "user": {
+            "id": "ceda14a9-66a0-488b-b338-9a69e5eb8d81",
+            "email": "admin@nuevatienda.com",
+            "name": "Administrador Principal",
+            "role": "ADMIN"
+        }
+    }
+}
+
 
 ### 1.2 Login
 POST {{base_url}}/auth/login

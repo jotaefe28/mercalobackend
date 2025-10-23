@@ -43,13 +43,12 @@ class AuthService {
       const company = await Company.create(companyData);
       
       // Crear usuario administrador
-      const userWithCompany = {
+      const adminUserData = {
         ...userData,
-        company_id: company.id,
         role: 'ADMIN'
       };
       
-      const user = await User.create(userWithCompany);
+      const user = await User.create(adminUserData, company.id);
 
       logger.info('Registro completado exitosamente', {
         companyId: company.id,
@@ -84,7 +83,7 @@ class AuthService {
       logger.info('Intento de inicio de sesión', { email });
 
       // Buscar usuario
-      const user = await User.findByEmail(email);
+      const user = await User.findByEmailWithPassword(email);
       if (!user) {
         throw {
           code: ERROR_CODES.INVALID_CREDENTIALS,
@@ -93,7 +92,7 @@ class AuthService {
       }
 
       // Verificar contraseña
-      const isValidPassword = await bcryptUtils.compare(password, user.password);
+      const isValidPassword = await bcryptUtils.verifyPassword(password, user.password);
       if (!isValidPassword) {
         throw {
           code: ERROR_CODES.INVALID_CREDENTIALS,
@@ -126,10 +125,10 @@ class AuthService {
         email: user.email
       };
 
-      const { accessToken, refreshToken } = jwtUtils.generateTokens(payload);
+      const { accessToken, refreshToken } = jwtUtils.generateTokenPair(payload);
 
       // Actualizar último acceso
-      await User.updateLastLogin(user.id);
+      await User.updateLastLogin(user.id, user.company_id);
 
       logger.info('Inicio de sesión exitoso', {
         userId: user.id,
@@ -231,7 +230,7 @@ class AuthService {
       }
 
       // Verificar contraseña actual
-      const isValidPassword = await bcryptUtils.compare(currentPassword, user.password);
+      const isValidPassword = await bcryptUtils.verifyPassword(currentPassword, user.password);
       if (!isValidPassword) {
         throw {
           code: ERROR_CODES.INVALID_CREDENTIALS,

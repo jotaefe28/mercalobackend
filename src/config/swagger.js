@@ -49,7 +49,7 @@ const swaggerOptions = {
     },
     servers: [
       {
-        url: process.env.API_BASE_URL || 'http://localhost:3000',
+        url: process.env.API_BASE_URL || 'http://localhost:3001',
         description: 'Servidor de Desarrollo'
       },
       {
@@ -405,7 +405,7 @@ function setupSwagger(app) {
   // Middleware para Swagger UI
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerUiOptions));
   
-  console.log(`📚 Documentación Swagger disponible en: ${process.env.API_BASE_URL || 'http://localhost:3000'}/api-docs`);
+  console.log(`📚 Documentación Swagger disponible en: ${process.env.API_BASE_URL || 'http://localhost:3001'}/api-docs`);
 }
 
 module.exports = {
