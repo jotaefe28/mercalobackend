@@ -332,3 +332,42 @@ LEFT JOIN (
 ) points_stats ON c.id = points_stats.company_id
 
 WHERE c.is_active = TRUE;
+
+-- ===================================
+-- VISTA: ESTADO DE SUSCRIPCIONES
+-- ===================================
+
+CREATE VIEW v_company_subscription_status AS
+SELECT 
+    c.id,
+    c.name,
+    c.email,
+    c.plan,
+    c.is_active,
+    c.active_until,
+    CASE 
+        WHEN c.active_until IS NULL THEN 'UNLIMITED'
+        WHEN c.active_until < CURDATE() THEN 'EXPIRED'
+        WHEN c.active_until BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN 'EXPIRING_SOON'
+        ELSE 'ACTIVE'
+    END AS subscription_status,
+    CASE 
+        WHEN c.active_until IS NULL THEN NULL
+        ELSE DATEDIFF(c.active_until, CURDATE())
+    END AS days_remaining,
+    CASE 
+        WHEN c.active_until IS NULL THEN 'Sin límite de tiempo'
+        WHEN c.active_until < CURDATE() THEN CONCAT('Vencido hace ', ABS(DATEDIFF(c.active_until, CURDATE())), ' días')
+        ELSE CONCAT('Vence en ', DATEDIFF(c.active_until, CURDATE()), ' días')
+    END AS status_description,
+    c.created_at,
+    c.updated_at
+FROM companies c
+ORDER BY 
+    CASE 
+        WHEN c.active_until IS NULL THEN 1
+        WHEN c.active_until < CURDATE() THEN 2
+        WHEN c.active_until BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN 3
+        ELSE 4
+    END,
+    c.active_until ASC;

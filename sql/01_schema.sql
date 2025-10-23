@@ -32,12 +32,15 @@ CREATE TABLE companies (
     plan ENUM('BASIC', 'PREMIUM', 'ENTERPRISE') DEFAULT 'BASIC',
     logo_url VARCHAR(500),
     is_active BOOLEAN DEFAULT TRUE,
+    active_until DATE NULL COMMENT 'Fecha hasta la cual la empresa está activa (NULL = sin límite)',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     INDEX idx_companies_tax_id (tax_id),
     INDEX idx_companies_plan (plan),
-    INDEX idx_companies_active (is_active)
+    INDEX idx_companies_active (is_active),
+    INDEX idx_companies_active_until (active_until),
+    INDEX idx_companies_active_status (is_active, active_until)
 );
 
 -- ===================================
@@ -49,6 +52,7 @@ CREATE TABLE users (
     company_id CHAR(36) NOT NULL,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL,
+    phone VARCHAR(20) NULL COMMENT 'Número de teléfono del usuario',
     password VARCHAR(255) NOT NULL,
     role ENUM('ADMIN', 'MANAGER', 'USER') DEFAULT 'USER',
     is_active BOOLEAN DEFAULT TRUE,
@@ -65,6 +69,7 @@ CREATE TABLE users (
     UNIQUE KEY unique_email_company (email, company_id),
     INDEX idx_users_company (company_id),
     INDEX idx_users_email (email),
+    INDEX idx_users_phone (phone),
     INDEX idx_users_role (role),
     INDEX idx_users_active (is_active)
 );

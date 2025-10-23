@@ -458,5 +458,145 @@ BEGIN
     AND DATE(s.created_at) BETWEEN p_date_from AND p_date_to;
 END //
 
+-- ===================================
+-- GESTIÓN DE FECHAS DE VENCIMIENTO
+-- ===================================
+
+-- Procedimiento para extender fecha de vencimiento de empresa
+CREATE PROCEDURE ExtendCompanySubscription(
+    IN p_company_id CHAR(36),
+    IN p_months INT,
+    OUT p_success BOOLEAN,
+    OUT p_message VARCHAR(255),
+    OUT p_new_date DATE
+)
+BEGIN
+    DECLARE v_current_date DATE;
+    DECLARE v_is_active BOOLEAN;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET p_success = FALSE;
+        SET p_message = 'Error al extender suscripción';
+        SET p_new_date = NULL;
+    END;
+    
+    START TRANSACTION;
+    
+    -- Verificar que la empresa existe
+    SELECT active_until, is_active 
+    INTO v_current_date, v_is_active
+    FROM companies 
+    WHERE id = p_company_id;
+    
+    IF ROW_COUNT() = 0 THEN
+        SET p_success = FALSE;
+        SET p_message = 'Empresa no encontrada';
+        SET p_new_date = NULL;
+        ROLLBACK;
+    ELSE
+        -- Calcular nueva fecha desde la actual o desde hoy si es mayor
+        IF v_current_date IS NULL OR v_current_date < CURDATE() THEN
+            SET p_new_date = DATE_ADD(CURDATE(), INTERVAL p_months MONTH);
+        ELSE
+            SET p_new_date = DATE_ADD(v_current_date, INTERVAL p_months MONTH);
+        END IF;
+        
+        -- Actualizar la empresa
+        UPDATE companies 
+        SET active_until = p_new_date,
+            is_active = TRUE,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = p_company_id;
+        
+        SET p_success = TRUE;
+        SET p_message = CONCAT('Suscripción extendida hasta ', p_new_date);
+        
+        COMMIT;
+    END IF;
+END //
+
+-- Procedimiento para obtener empresas que vencen pronto
+CREATE PROCEDURE GetExpiringCompanies(
+    IN p_days_ahead INT
+)
+BEGIN
+    SELECT 
+        c.id,
+        c.name,
+        c.email,
+        c.plan,
+        c.active_until,
+        DATEDIFF(c.active_until, CURDATE()) as days_remaining
+    FROM companies c
+    WHERE c.is_active = TRUE
+    AND c.active_until IS NOT NULL
+    AND c.active_until BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL p_days_ahead DAY)
+    ORDER BY c.active_until ASC;
+END //
+
+-- Procedimiento para desactivar empresas vencidas
+CREATE PROCEDURE DeactivateExpiredCompanies()
+BEGIN
+    DECLARE v_affected_rows INT DEFAULT 0;
+    
+    UPDATE companies 
+    SET is_active = FALSE,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE is_active = TRUE 
+    AND active_until IS NOT NULL 
+    AND active_until < CURDATE();
+    
+    SET v_affected_rows = ROW_COUNT();
+    
+    SELECT 
+        v_affected_rows as companies_deactivated,
+        'Empresas desactivadas por vencimiento' as message,
+        NOW() as executed_at;
+END //
+
+-- Procedimiento para verificar estado de suscripción
+CREATE PROCEDURE CheckCompanySubscriptionStatus(
+    IN p_company_id CHAR(36),
+    OUT p_is_active BOOLEAN,
+    OUT p_is_expired BOOLEAN,
+    OUT p_days_remaining INT,
+    OUT p_status_message VARCHAR(255)
+)
+BEGIN
+    DECLARE v_active_until DATE;
+    DECLARE v_is_active BOOLEAN;
+    
+    SELECT active_until, is_active 
+    INTO v_active_until, v_is_active
+    FROM companies 
+    WHERE id = p_company_id;
+    
+    IF ROW_COUNT() = 0 THEN
+        SET p_is_active = FALSE;
+        SET p_is_expired = TRUE;
+        SET p_days_remaining = 0;
+        SET p_status_message = 'Empresa no encontrada';
+    ELSE
+        SET p_is_active = v_is_active;
+        
+        IF v_active_until IS NULL THEN
+            SET p_is_expired = FALSE;
+            SET p_days_remaining = 999999; -- Sin límite
+            SET p_status_message = 'Suscripción sin límite de tiempo';
+        ELSE
+            SET p_days_remaining = DATEDIFF(v_active_until, CURDATE());
+            
+            IF v_active_until < CURDATE() THEN
+                SET p_is_expired = TRUE;
+                SET p_status_message = CONCAT('Suscripción vencida hace ', ABS(p_days_remaining), ' días');
+            ELSE
+                SET p_is_expired = FALSE;
+                SET p_status_message = CONCAT('Suscripción activa por ', p_days_remaining, ' días más');
+            END IF;
+        END IF;
+    END IF;
+END //
+
 -- Restaurar delimiter
 DELIMITER ;
