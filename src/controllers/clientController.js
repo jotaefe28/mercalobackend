@@ -3,435 +3,449 @@
  * Sistema POS Multitenant
  */
 
-const clientService = require('../services/clientService');
-const { validationResult } = require('express-validator');
+const ClientService = require('../services/clientService');
 const { logger } = require('../middlewares/logger');
-const { ERROR_CODES, RESPONSE_MESSAGES } = require('../utils/constants');
 
 class ClientController {
   /**
-   * Crear nuevo cliente
+   * Crear un nuevo cliente
    */
-  async createClient(req, res, next) {
+  static async createClient(req, res) {
     try {
-      // Validar entrada
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: errors.array()
-        });
-      }
-
       const clientData = req.body;
-      const companyId = req.user.companyId;
-      const createdBy = req.user.userId;
-
-      logger.info('Creando cliente', {
-        email: clientData.email,
-        document: clientData.document,
-        companyId,
-        createdBy
-      });
-
-      const client = await clientService.createClient(clientData, companyId, createdBy);
-
-      logger.info('Cliente creado exitosamente', {
-        clientId: client.id,
-        email: client.email,
-        document: client.document
-      });
-
+      const companyId = req.user.company_id;
+      
+      const client = await ClientService.createClient(clientData, companyId);
+      
       res.status(201).json({
         success: true,
-        message: RESPONSE_MESSAGES.CREATED,
+        message: 'Cliente creado exitosamente',
         data: client
       });
-
+      
     } catch (error) {
-      logger.error('Error creando cliente', {
+      logger.error('Error en createClient controller:', {
         error: error.message,
-        companyId: req.user?.companyId
+        body: req.body,
+        companyId: req.user.company_id
       });
-      next(error);
+      
+      const statusCode = error.message.includes('Ya existe') ? 409 : 500;
+      
+      res.status(statusCode).json({
+        success: false,
+        message: error.message || 'Error interno del servidor',
+        data: null
+      });
     }
   }
 
   /**
    * Obtener cliente por ID
    */
-  async getClientById(req, res, next) {
+  static async getClientById(req, res) {
     try {
-      const { clientId } = req.params;
-      const companyId = req.user.companyId;
-
-      const client = await clientService.getClientById(clientId, companyId);
-
-      res.json({
+      const { id } = req.params;
+      const companyId = req.user.company_id;
+      
+      const client = await ClientService.getClientById(id, companyId);
+      
+      res.status(200).json({
         success: true,
+        message: 'Cliente encontrado',
         data: client
       });
-
+      
     } catch (error) {
-      logger.error('Error obteniendo cliente', {
-        clientId: req.params.clientId,
-        companyId: req.user?.companyId,
-        error: error.message
+      logger.error('Error en getClientById controller:', {
+        error: error.message,
+        clientId: req.params.id,
+        companyId: req.user.company_id
       });
-      next(error);
+      
+      const statusCode = error.message === 'Cliente no encontrado' ? 404 : 500;
+      
+      res.status(statusCode).json({
+        success: false,
+        message: error.message || 'Error interno del servidor',
+        data: null
+      });
     }
   }
-
-  /**
-   * Obtener cliente por email
-   */
-  async getClientByEmail(req, res, next) {
-    try {
-      const { email } = req.params;
-      const companyId = req.user.companyId;
-
-      const client = await clientService.getClientByEmail(email, companyId);
-
-      res.json({
-        success: true,
-        data: client
-      });
-
-    } catch (error) {
-      logger.error('Error obteniendo cliente por email', {
-        email: req.params.email,
-        companyId: req.user?.companyId,
-        error: error.message
-      });
-      next(error);
-    }
-  }
-
+  
   /**
    * Obtener cliente por documento
    */
-  async getClientByDocument(req, res, next) {
+  static async getClientByDocument(req, res) {
     try {
-      const { document } = req.params;
-      const companyId = req.user.companyId;
-
-      const client = await clientService.getClientByDocument(document, companyId);
-
-      res.json({
+      const { document_type, document_number } = req.params;
+      const companyId = req.user.company_id;
+      
+      const client = await ClientService.getClientByDocument(document_number, document_type, companyId);
+      
+      res.status(200).json({
         success: true,
+        message: 'Cliente encontrado',
         data: client
       });
-
+      
     } catch (error) {
-      logger.error('Error obteniendo cliente por documento', {
-        document: req.params.document,
-        companyId: req.user?.companyId,
-        error: error.message
+      logger.error('Error en getClientByDocument controller:', {
+        error: error.message,
+        document_type: req.params.document_type,
+        document_number: req.params.document_number,
+        companyId: req.user.company_id
       });
-      next(error);
+      
+      const statusCode = error.message === 'Cliente no encontrado' ? 404 : 500;
+      
+      res.status(statusCode).json({
+        success: false,
+        message: error.message || 'Error interno del servidor',
+        data: null
+      });
     }
   }
 
   /**
-   * Listar clientes
+   * Listar clientes con filtros y paginación
    */
-  async getClients(req, res, next) {
+  static async getClients(req, res) {
     try {
-      const companyId = req.user.companyId;
-      const options = {
-        page: parseInt(req.query.page) || 1,
-        limit: parseInt(req.query.limit) || 20,
-        search: req.query.search || '',
-        isActive: req.query.isActive !== undefined ? req.query.isActive === 'true' : null,
-        sortBy: req.query.sortBy || 'name',
-        sortOrder: req.query.sortOrder || 'asc'
-      };
-
-      logger.info('Listando clientes', {
-        companyId,
-        options
-      });
-
-      const result = await clientService.getClients(companyId, options);
-
-      res.json({
+      const filters = req.query;
+      const companyId = req.user.company_id;
+      
+      const result = await ClientService.getClients(filters, companyId);
+      
+      res.status(200).json({
         success: true,
-        data: result.data,
+        message: 'Clientes obtenidos exitosamente',
+        data: result.clients,
         pagination: {
-          page: options.page,
-          limit: options.limit,
+          page: result.page,
+          limit: result.limit,
           total: result.total,
-          pages: Math.ceil(result.total / options.limit)
+          pages: result.pages
         }
       });
-
+      
     } catch (error) {
-      logger.error('Error listando clientes', {
-        companyId: req.user?.companyId,
-        error: error.message
+      logger.error('Error en getClients controller:', {
+        error: error.message,
+        query: req.query,
+        companyId: req.user.company_id
       });
-      next(error);
+      
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Error interno del servidor',
+        data: null
+      });
+    }
+  }
+  
+  /**
+   * Buscar clientes
+   */
+  static async searchClients(req, res) {
+    try {
+      const { search, quick } = req.query;
+      const companyId = req.user.company_id;
+      
+      if (!search || search.trim().length < 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'El término de búsqueda es requerido',
+          data: null
+        });
+      }
+      
+      const clients = await ClientService.searchClients(search, companyId, { quick: quick === 'true' });
+      
+      res.status(200).json({
+        success: true,
+        message: 'Búsqueda realizada exitosamente',
+        data: clients
+      });
+      
+    } catch (error) {
+      logger.error('Error en searchClients controller:', {
+        error: error.message,
+        search: req.query.search,
+        companyId: req.user.company_id
+      });
+      
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Error interno del servidor',
+        data: null
+      });
     }
   }
 
   /**
    * Actualizar cliente
    */
-  async updateClient(req, res, next) {
+  static async updateClient(req, res) {
     try {
-      // Validar entrada
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
+      const { id } = req.params;
+      const updateData = req.body;
+      const companyId = req.user.company_id;
+      
+      const client = await ClientService.updateClient(id, updateData, companyId);
+      
+      res.status(200).json({
+        success: true,
+        message: 'Cliente actualizado exitosamente',
+        data: client
+      });
+      
+    } catch (error) {
+      logger.error('Error en updateClient controller:', {
+        error: error.message,
+        clientId: req.params.id,
+        body: req.body,
+        companyId: req.user.company_id
+      });
+      
+      let statusCode = 500;
+      if (error.message === 'Cliente no encontrado') {
+        statusCode = 404;
+      } else if (error.message.includes('Ya existe')) {
+        statusCode = 409;
+      }
+      
+      res.status(statusCode).json({
+        success: false,
+        message: error.message || 'Error interno del servidor',
+        data: null
+      });
+    }
+  }
+  
+  /**
+   * Eliminar cliente (soft delete)
+   */
+  static async deleteClient(req, res) {
+    try {
+      const { id } = req.params;
+      const companyId = req.user.company_id;
+      
+      await ClientService.deleteClient(id, companyId);
+      
+      res.status(200).json({
+        success: true,
+        message: 'Cliente eliminado exitosamente',
+        data: null
+      });
+      
+    } catch (error) {
+      logger.error('Error en deleteClient controller:', {
+        error: error.message,
+        clientId: req.params.id,
+        companyId: req.user.company_id
+      });
+      
+      const statusCode = error.message === 'Cliente no encontrado' ? 404 : 500;
+      
+      res.status(statusCode).json({
+        success: false,
+        message: error.message || 'Error interno del servidor',
+        data: null
+      });
+    }
+  }
+
+  /**
+   * Activar/Desactivar cliente
+   */
+  static async toggleClientStatus(req, res) {
+    try {
+      const { id } = req.params;
+      const { is_active } = req.body;
+      const companyId = req.user.company_id;
+      
+      if (typeof is_active !== 'boolean') {
         return res.status(400).json({
           success: false,
-          message: 'Datos de entrada inválidos',
-          errors: errors.array()
+          message: 'El campo is_active debe ser verdadero o falso',
+          data: null
         });
       }
-
-      const { clientId } = req.params;
-      const updateData = req.body;
-      const companyId = req.user.companyId;
-      const updatedBy = req.user.userId;
-
-      logger.info('Actualizando cliente', {
-        clientId,
-        companyId,
-        updatedBy
-      });
-
-      const client = await clientService.updateClient(clientId, updateData, companyId, updatedBy);
-
-      logger.info('Cliente actualizado exitosamente', {
-        clientId,
-        companyId
-      });
-
-      res.json({
+      
+      const client = await ClientService.toggleClientStatus(id, is_active, companyId);
+      
+      res.status(200).json({
         success: true,
-        message: RESPONSE_MESSAGES.UPDATED,
+        message: `Cliente ${is_active ? 'activado' : 'desactivado'} exitosamente`,
         data: client
       });
-
+      
     } catch (error) {
-      logger.error('Error actualizando cliente', {
-        clientId: req.params.clientId,
-        companyId: req.user?.companyId,
-        error: error.message
+      logger.error('Error en toggleClientStatus controller:', {
+        error: error.message,
+        clientId: req.params.id,
+        is_active: req.body.is_active,
+        companyId: req.user.company_id
       });
-      next(error);
+      
+      const statusCode = error.message === 'Cliente no encontrado' ? 404 : 500;
+      
+      res.status(statusCode).json({
+        success: false,
+        message: error.message || 'Error interno del servidor',
+        data: null
+      });
     }
   }
-
+  
   /**
-   * Cambiar estado del cliente
+   * Actualizar puntos del cliente
    */
-  async toggleClientStatus(req, res, next) {
+  static async updateClientPoints(req, res) {
     try {
-      const { clientId } = req.params;
-      const companyId = req.user.companyId;
-      const updatedBy = req.user.userId;
-
-      logger.info('Cambiando estado de cliente', {
-        clientId,
-        companyId,
-        updatedBy
-      });
-
-      const client = await clientService.toggleClientStatus(clientId, companyId, updatedBy);
-
-      logger.info('Estado de cliente cambiado', {
-        clientId,
-        newStatus: client.is_active
-      });
-
-      res.json({
-        success: true,
-        message: RESPONSE_MESSAGES.UPDATED,
-        data: client
-      });
-
-    } catch (error) {
-      logger.error('Error cambiando estado de cliente', {
-        clientId: req.params.clientId,
-        companyId: req.user?.companyId,
-        error: error.message
-      });
-      next(error);
-    }
-  }
-
-  /**
-   * Buscar clientes
-   */
-  async searchClients(req, res, next) {
-    try {
-      const { q: searchTerm } = req.query;
-      const companyId = req.user.companyId;
-
-      if (!searchTerm || searchTerm.trim().length < 2) {
-        return res.json({
-          success: true,
-          data: []
+      const { id } = req.params;
+      const { points_change } = req.body;
+      const companyId = req.user.company_id;
+      
+      if (typeof points_change !== 'number') {
+        return res.status(400).json({
+          success: false,
+          message: 'El campo points_change debe ser un número',
+          data: null
         });
       }
-
-      logger.info('Buscando clientes', {
-        searchTerm,
-        companyId
-      });
-
-      const clients = await clientService.searchClients(companyId, searchTerm);
-
-      res.json({
+      
+      const client = await ClientService.updateClientPoints(id, points_change, companyId);
+      
+      res.status(200).json({
         success: true,
-        data: clients
+        message: 'Puntos del cliente actualizados exitosamente',
+        data: client
       });
-
+      
     } catch (error) {
-      logger.error('Error buscando clientes', {
-        searchTerm: req.query.q,
-        companyId: req.user?.companyId,
-        error: error.message
+      logger.error('Error en updateClientPoints controller:', {
+        error: error.message,
+        clientId: req.params.id,
+        points_change: req.body.points_change,
+        companyId: req.user.company_id
       });
-      next(error);
+      
+      const statusCode = error.message === 'Cliente no encontrado' ? 404 : 500;
+      
+      res.status(statusCode).json({
+        success: false,
+        message: error.message || 'Error interno del servidor',
+        data: null
+      });
     }
   }
 
   /**
-   * Obtener historial de compras del cliente
+   * Actualizar total de compras del cliente
    */
-  async getClientPurchaseHistory(req, res, next) {
+  static async updateClientPurchases(req, res) {
     try {
-      const { clientId } = req.params;
-      const companyId = req.user.companyId;
-      const options = {
-        page: parseInt(req.query.page) || 1,
-        limit: parseInt(req.query.limit) || 20,
-        dateFrom: req.query.dateFrom || null,
-        dateTo: req.query.dateTo || null
-      };
-
-      logger.info('Obteniendo historial de compras de cliente', {
-        clientId,
-        companyId,
-        options
-      });
-
-      const result = await clientService.getClientPurchaseHistory(clientId, companyId, options);
-
-      res.json({
+      const { id } = req.params;
+      const { purchase_amount } = req.body;
+      const companyId = req.user.company_id;
+      
+      if (typeof purchase_amount !== 'number' || purchase_amount < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'El campo purchase_amount debe ser un número positivo',
+          data: null
+        });
+      }
+      
+      const client = await ClientService.updateClientPurchases(id, purchase_amount, companyId);
+      
+      res.status(200).json({
         success: true,
-        data: result.data,
-        pagination: {
-          page: options.page,
-          limit: options.limit,
-          total: result.total,
-          pages: Math.ceil(result.total / options.limit)
-        }
+        message: 'Total de compras del cliente actualizado exitosamente',
+        data: client
       });
-
+      
     } catch (error) {
-      logger.error('Error obteniendo historial de compras', {
-        clientId: req.params.clientId,
-        companyId: req.user?.companyId,
-        error: error.message
+      logger.error('Error en updateClientPurchases controller:', {
+        error: error.message,
+        clientId: req.params.id,
+        purchase_amount: req.body.purchase_amount,
+        companyId: req.user.company_id
       });
-      next(error);
+      
+      const statusCode = error.message === 'Cliente no encontrado' ? 404 : 500;
+      
+      res.status(statusCode).json({
+        success: false,
+        message: error.message || 'Error interno del servidor',
+        data: null
+      });
     }
   }
-
+  
   /**
-   * Obtener estadísticas del cliente
+   * Obtener estadísticas de clientes
    */
-  async getClientStats(req, res, next) {
+  static async getClientStats(req, res) {
     try {
-      const { clientId } = req.params;
-      const companyId = req.user.companyId;
-
-      logger.info('Obteniendo estadísticas de cliente', {
-        clientId,
-        companyId
-      });
-
-      const stats = await clientService.getClientStats(clientId, companyId);
-
-      res.json({
+      const companyId = req.user.company_id;
+      
+      const stats = await ClientService.getClientStats(companyId);
+      
+      res.status(200).json({
         success: true,
+        message: 'Estadísticas de clientes obtenidas exitosamente',
         data: stats
       });
-
+      
     } catch (error) {
-      logger.error('Error obteniendo estadísticas de cliente', {
-        clientId: req.params.clientId,
-        companyId: req.user?.companyId,
-        error: error.message
+      logger.error('Error en getClientStats controller:', {
+        error: error.message,
+        companyId: req.user.company_id
       });
-      next(error);
+      
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Error interno del servidor',
+        data: null
+      });
     }
   }
-
+  
   /**
-   * Obtener clientes más frecuentes
+   * Buscar cliente por identificador
    */
-  async getTopClients(req, res, next) {
+  static async findClientByIdentifier(req, res) {
     try {
-      const companyId = req.user.companyId;
-      const options = {
-        limit: parseInt(req.query.limit) || 10,
-        dateFrom: req.query.dateFrom || null,
-        dateTo: req.query.dateTo || null,
-        sortBy: req.query.sortBy || 'purchase_count'
-      };
-
-      logger.info('Obteniendo clientes más frecuentes', {
-        companyId,
-        options
-      });
-
-      const topClients = await clientService.getTopClients(companyId, options);
-
-      res.json({
+      const { identifier } = req.params;
+      const companyId = req.user.company_id;
+      
+      const client = await ClientService.findClientByIdentifier(identifier, companyId);
+      
+      res.status(200).json({
         success: true,
-        data: topClients
+        message: 'Cliente encontrado',
+        data: client
       });
-
+      
     } catch (error) {
-      logger.error('Error obteniendo clientes más frecuentes', {
-        companyId: req.user?.companyId,
-        error: error.message
+      logger.error('Error en findClientByIdentifier controller:', {
+        error: error.message,
+        identifier: req.params.identifier,
+        companyId: req.user.company_id
       });
-      next(error);
-    }
-  }
-
-  /**
-   * Obtener estadísticas generales de clientes
-   */
-  async getCompanyClientStats(req, res, next) {
-    try {
-      const companyId = req.user.companyId;
-
-      logger.info('Obteniendo estadísticas de clientes de empresa', {
-        companyId
+      
+      const statusCode = error.message === 'Cliente no encontrado' ? 404 : 500;
+      
+      res.status(statusCode).json({
+        success: false,
+        message: error.message || 'Error interno del servidor',
+        data: null
       });
-
-      const stats = await clientService.getCompanyClientStats(companyId);
-
-      res.json({
-        success: true,
-        data: stats
-      });
-
-    } catch (error) {
-      logger.error('Error obteniendo estadísticas de clientes de empresa', {
-        companyId: req.user?.companyId,
-        error: error.message
-      });
-      next(error);
     }
   }
 }
 
-module.exports = new ClientController();
+module.exports = ClientController;

@@ -3,71 +3,73 @@
  * Sistema POS Multitenant
  */
 
-const Client = require('../models/Client');
-const Points = require('../models/Points');
+const Client = require('../models/client.model');
 const { logger } = require('../middlewares/logger');
-const { ERROR_CODES, RESPONSE_MESSAGES } = require('../utils/constants');
+const { v4: uuidv4 } = require('uuid');
 
 class ClientService {
   /**
-   * Crear nuevo cliente
+   * Crear un nuevo cliente
+   * @param {Object} clientData - Datos del cliente
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Cliente creado
    */
-  async createClient(clientData, companyId, createdBy) {
+  static async createClient(clientData, companyId) {
     try {
-      logger.info('Creando nuevo cliente', {
-        email: clientData.email,
-        document: clientData.document,
-        companyId,
-        createdBy
-      });
-
-      // Verificar que no exista el email
-      if (clientData.email) {
-        const existingByEmail = await Client.findByEmail(clientData.email, companyId);
-        if (existingByEmail) {
-          throw {
-            code: ERROR_CODES.RESOURCE_ALREADY_EXISTS,
-            message: 'El email ya está registrado'
-          };
+      // Verificar si el documento ya existe
+      const existingDocument = await Client.documentExists(
+        clientData.document_number, 
+        clientData.document_type, 
+        companyId
+      );
+      
+      if (existingDocument) {
+        throw new Error('Ya existe un cliente con este número de documento');
+      }
+      
+      // Verificar si el email ya existe (si se proporciona)
+      if (clientData.email && clientData.email.trim() !== '') {
+        const existingEmail = await Client.findByEmail(clientData.email, companyId);
+        if (existingEmail) {
+          throw new Error('Ya existe un cliente con este email');
         }
       }
-
-      // Verificar que no exista el documento
-      if (clientData.document) {
-        const existingByDocument = await Client.findByDocument(clientData.document, companyId);
-        if (existingByDocument) {
-          throw {
-            code: ERROR_CODES.RESOURCE_ALREADY_EXISTS,
-            message: 'El documento ya está registrado'
-          };
+      
+      // Verificar si el teléfono ya existe (si se proporciona)
+      if (clientData.phone && clientData.phone.trim() !== '') {
+        const existingPhone = await Client.findByPhone(clientData.phone, companyId);
+        if (existingPhone) {
+          throw new Error('Ya existe un cliente con este teléfono');
         }
       }
-
-      // Agregar datos adicionales
-      const clientWithCompany = {
+      
+      // Preparar datos del cliente
+      const newClientData = {
+        id: uuidv4(),
         ...clientData,
         company_id: companyId,
-        created_by: createdBy
+        current_points: 0,
+        total_purchases: 0,
+        is_active: true
       };
-
-      // Crear cliente
-      const client = await Client.create(clientWithCompany);
-
-      logger.info('Cliente creado exitosamente', {
-        clientId: client.id,
-        email: client.email,
-        document: client.document,
-        companyId
-      });
-
-      return client;
-
-    } catch (error) {
-      logger.error('Error creando cliente', {
-        email: clientData.email,
-        document: clientData.document,
+      
+      // Crear el cliente
+      const clientId = await Client.create(newClientData);
+      
+      // Obtener y devolver el cliente creado
+      const createdClient = await Client.findById(clientId, companyId);
+      
+      logger.info('Cliente creado exitosamente:', {
+        clientId,
         companyId,
-        error: error.message
+        document: clientData.document_number
+      });
+      
+      return createdClient;
+    } catch (error) {
+      logger.error('Error creando cliente:', {
+        error: error.message,
+        clientData: { ...clientData, company_id: companyId }
       });
       throw error;
     }
@@ -75,146 +77,126 @@ class ClientService {
 
   /**
    * Obtener cliente por ID
+   * @param {string} clientId - ID del cliente
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object|null>} Cliente encontrado o null
    */
-  async getClientById(clientId, companyId) {
+  static async getClientById(clientId, companyId) {
     try {
-      const client = await Client.findByIdAndCompany(clientId, companyId);
+      const client = await Client.findById(clientId, companyId);
+      
       if (!client) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Cliente no encontrado'
-        };
+        throw new Error('Cliente no encontrado');
       }
-
-      // Obtener balance de puntos
-      const pointsBalance = await Points.getClientBalance(clientId, companyId);
-      client.points_balance = pointsBalance.available_points || 0;
-
+      
       return client;
-
     } catch (error) {
-      logger.error('Error obteniendo cliente', {
+      logger.error('Error obteniendo cliente por ID:', {
+        error: error.message,
         clientId,
-        companyId,
-        error: error.message
+        companyId
       });
       throw error;
     }
   }
-
-  /**
-   * Obtener cliente por email
-   */
-  async getClientByEmail(email, companyId) {
-    try {
-      const client = await Client.findByEmail(email, companyId);
-      if (!client) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Cliente no encontrado'
-        };
-      }
-
-      // Obtener balance de puntos
-      const pointsBalance = await Points.getClientBalance(client.id, companyId);
-      client.points_balance = pointsBalance.available_points || 0;
-
-      return client;
-
-    } catch (error) {
-      logger.error('Error obteniendo cliente por email', {
-        email,
-        companyId,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
+  
   /**
    * Obtener cliente por documento
+   * @param {string} documentNumber - Número de documento
+   * @param {string} documentType - Tipo de documento
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object|null>} Cliente encontrado o null
    */
-  async getClientByDocument(document, companyId) {
+  static async getClientByDocument(documentNumber, documentType, companyId) {
     try {
-      const client = await Client.findByDocument(document, companyId);
+      const client = await Client.findByDocument(documentNumber, documentType, companyId);
+      
       if (!client) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Cliente no encontrado'
-        };
+        throw new Error('Cliente no encontrado');
       }
-
-      // Obtener balance de puntos
-      const pointsBalance = await Points.getClientBalance(client.id, companyId);
-      client.points_balance = pointsBalance.available_points || 0;
-
+      
       return client;
-
     } catch (error) {
-      logger.error('Error obteniendo cliente por documento', {
-        document,
-        companyId,
-        error: error.message
+      logger.error('Error obteniendo cliente por documento:', {
+        error: error.message,
+        documentNumber,
+        documentType,
+        companyId
       });
       throw error;
     }
   }
 
   /**
-   * Listar clientes
+   * Obtener lista de clientes con filtros y paginación
+   * @param {Object} filters - Filtros de búsqueda
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Lista de clientes paginada
    */
-  async getClients(companyId, options = {}) {
+  static async getClients(filters, companyId) {
     try {
-      const {
-        page = 1,
-        limit = 20,
-        search = '',
-        isActive = null,
-        sortBy = 'name',
-        sortOrder = 'asc'
-      } = options;
-
-      logger.info('Listando clientes', {
-        companyId,
-        page,
-        limit,
-        search,
-        isActive,
-        sortBy,
-        sortOrder
-      });
-
-      const filters = { company_id: companyId };
+      const { page = 1, limit = 10, sort_by = 'created_at', sort_order = 'DESC', ...searchFilters } = filters;
       
-      if (isActive !== null) filters.is_active = isActive;
-
-      const result = await Client.findAll(filters, {
-        page,
-        limit,
-        search,
-        searchFields: ['name', 'email', 'document', 'phone'],
-        sortBy,
-        sortOrder
-      });
-
-      // Agregar balance de puntos a cada cliente
-      for (let client of result.data) {
-        const pointsBalance = await Points.getClientBalance(client.id, companyId);
-        client.points_balance = pointsBalance.available_points || 0;
-      }
-
-      logger.info('Clientes listados exitosamente', {
+      // Construir filtros para la consulta
+      const queryFilters = {
+        ...searchFilters,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        sort_by,
+        sort_order
+      };
+      
+      const result = await Client.findAll(companyId, queryFilters);
+      
+      logger.info('Clientes obtenidos exitosamente:', {
         companyId,
-        total: result.total,
-        returned: result.data.length
+        filters: queryFilters,
+        totalFound: result.total
       });
-
+      
       return result;
-
     } catch (error) {
-      logger.error('Error listando clientes', {
+      logger.error('Error obteniendo lista de clientes:', {
+        error: error.message,
+        filters,
+        companyId
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Buscar clientes
+   * @param {string} searchTerm - Término de búsqueda
+   * @param {string} companyId - ID de la empresa
+   * @param {Object} options - Opciones de búsqueda
+   * @returns {Promise<Array>} Lista de clientes encontrados
+   */
+  static async searchClients(searchTerm, companyId, options = {}) {
+    try {
+      const { limit = 10, quick = false } = options;
+      
+      let clients;
+      if (quick) {
+        clients = await Client.quickSearch(searchTerm, companyId, limit);
+      } else {
+        clients = await Client.search(searchTerm, companyId, limit);
+      }
+      
+      logger.info('Búsqueda de clientes realizada:', {
         companyId,
-        error: error.message
+        searchTerm,
+        found: clients.length,
+        quick
+      });
+      
+      return clients;
+    } catch (error) {
+      logger.error('Error buscando clientes:', {
+        error: error.message,
+        searchTerm,
+        companyId,
+        options
       });
       throw error;
     }
@@ -222,340 +204,261 @@ class ClientService {
 
   /**
    * Actualizar cliente
+   * @param {string} clientId - ID del cliente
+   * @param {Object} updateData - Datos a actualizar
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Cliente actualizado
    */
-  async updateClient(clientId, updateData, companyId, updatedBy) {
+  static async updateClient(clientId, updateData, companyId) {
     try {
-      logger.info('Actualizando cliente', {
-        clientId,
-        companyId,
-        updatedBy
-      });
-
       // Verificar que el cliente existe
-      const existingClient = await Client.findByIdAndCompany(clientId, companyId);
+      const existingClient = await Client.findById(clientId, companyId);
       if (!existingClient) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Cliente no encontrado'
-        };
+        throw new Error('Cliente no encontrado');
       }
-
-      // Si se actualiza el email, verificar que no esté en uso
-      if (updateData.email && updateData.email !== existingClient.email) {
-        const emailInUse = await Client.findByEmail(updateData.email, companyId);
-        if (emailInUse) {
-          throw {
-            code: ERROR_CODES.RESOURCE_ALREADY_EXISTS,
-            message: 'El email ya está en uso'
-          };
+      
+      // Verificar documento único si se está actualizando
+      if (updateData.document_number || updateData.document_type) {
+        const documentNumber = updateData.document_number || existingClient.document_number;
+        const documentType = updateData.document_type || existingClient.document_type;
+        
+        const existingDocument = await Client.documentExists(documentNumber, documentType, companyId);
+        if (existingDocument && existingDocument.id !== clientId) {
+          throw new Error('Ya existe otro cliente con este número de documento');
         }
       }
-
-      // Si se actualiza el documento, verificar que no esté en uso
-      if (updateData.document && updateData.document !== existingClient.document) {
-        const documentInUse = await Client.findByDocument(updateData.document, companyId);
-        if (documentInUse) {
-          throw {
-            code: ERROR_CODES.RESOURCE_ALREADY_EXISTS,
-            message: 'El documento ya está en uso'
-          };
+      
+      // Verificar email único si se está actualizando
+      if (updateData.email && updateData.email.trim() !== '') {
+        const existingEmail = await Client.findByEmail(updateData.email, companyId);
+        if (existingEmail && existingEmail.id !== clientId) {
+          throw new Error('Ya existe otro cliente con este email');
         }
       }
-
-      // Preparar datos de actualización
-      const dataToUpdate = {
-        ...updateData,
-        updated_by: updatedBy,
-        updated_at: new Date()
-      };
-
+      
+      // Verificar teléfono único si se está actualizando
+      if (updateData.phone && updateData.phone.trim() !== '') {
+        const existingPhone = await Client.findByPhone(updateData.phone, companyId);
+        if (existingPhone && existingPhone.id !== clientId) {
+          throw new Error('Ya existe otro cliente con este teléfono');
+        }
+      }
+      
       // Actualizar cliente
-      const updatedClient = await Client.update(clientId, dataToUpdate);
-
-      // Obtener balance de puntos
-      const pointsBalance = await Points.getClientBalance(clientId, companyId);
-      updatedClient.points_balance = pointsBalance.available_points || 0;
-
-      logger.info('Cliente actualizado exitosamente', {
+      await Client.update(clientId, updateData, companyId);
+      
+      // Obtener y devolver el cliente actualizado
+      const updatedClient = await Client.findById(clientId, companyId);
+      
+      logger.info('Cliente actualizado exitosamente:', {
         clientId,
-        companyId
+        companyId,
+        updateData
       });
-
+      
       return updatedClient;
-
     } catch (error) {
-      logger.error('Error actualizando cliente', {
+      logger.error('Error actualizando cliente:', {
+        error: error.message,
         clientId,
-        companyId,
-        error: error.message
+        updateData,
+        companyId
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Eliminar cliente (soft delete)
+   * @param {string} clientId - ID del cliente
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<boolean>} Resultado de la operación
+   */
+  static async deleteClient(clientId, companyId) {
+    try {
+      // Verificar que el cliente existe
+      const existingClient = await Client.findById(clientId, companyId);
+      if (!existingClient) {
+        throw new Error('Cliente no encontrado');
+      }
+      
+      // Eliminar cliente (soft delete)
+      await Client.delete(clientId, companyId);
+      
+      logger.info('Cliente eliminado exitosamente:', {
+        clientId,
+        companyId
+      });
+      
+      return true;
+    } catch (error) {
+      logger.error('Error eliminando cliente:', {
+        error: error.message,
+        clientId,
+        companyId
       });
       throw error;
     }
   }
 
   /**
-   * Cambiar estado activo/inactivo del cliente
+   * Activar/Desactivar cliente
+   * @param {string} clientId - ID del cliente
+   * @param {boolean} isActive - Estado activo
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Cliente actualizado
    */
-  async toggleClientStatus(clientId, companyId, updatedBy) {
+  static async toggleClientStatus(clientId, isActive, companyId) {
     try {
-      logger.info('Cambiando estado de cliente', {
+      const updateData = { is_active: isActive };
+      const updatedClient = await this.updateClient(clientId, updateData, companyId);
+      
+      logger.info('Estado de cliente actualizado:', {
         clientId,
         companyId,
-        updatedBy
+        isActive
       });
-
-      // Verificar que el cliente existe
-      const client = await Client.findByIdAndCompany(clientId, companyId);
-      if (!client) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Cliente no encontrado'
-        };
-      }
-
-      const newStatus = !client.is_active;
-      const updatedClient = await Client.update(clientId, {
-        is_active: newStatus,
-        updated_by: updatedBy,
-        updated_at: new Date()
-      });
-
-      // Obtener balance de puntos
-      const pointsBalance = await Points.getClientBalance(clientId, companyId);
-      updatedClient.points_balance = pointsBalance.available_points || 0;
-
-      logger.info('Estado de cliente cambiado exitosamente', {
-        clientId,
-        newStatus,
-        companyId
-      });
-
+      
       return updatedClient;
-
     } catch (error) {
-      logger.error('Error cambiando estado de cliente', {
+      logger.error('Error actualizando estado de cliente:', {
+        error: error.message,
         clientId,
-        companyId,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Buscar clientes por criterios múltiples
-   */
-  async searchClients(companyId, searchTerm) {
-    try {
-      logger.info('Buscando clientes', {
-        companyId,
-        searchTerm
-      });
-
-      if (!searchTerm || searchTerm.trim().length < 2) {
-        return [];
-      }
-
-      const clients = await Client.search(companyId, searchTerm.trim());
-
-      // Agregar balance de puntos a cada cliente
-      for (let client of clients) {
-        const pointsBalance = await Points.getClientBalance(client.id, companyId);
-        client.points_balance = pointsBalance.available_points || 0;
-      }
-
-      logger.info('Búsqueda de clientes completada', {
-        companyId,
-        searchTerm,
-        resultsCount: clients.length
-      });
-
-      return clients;
-
-    } catch (error) {
-      logger.error('Error buscando clientes', {
-        companyId,
-        searchTerm,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Obtener historial de compras del cliente
-   */
-  async getClientPurchaseHistory(clientId, companyId, options = {}) {
-    try {
-      const {
-        page = 1,
-        limit = 20,
-        dateFrom = null,
-        dateTo = null
-      } = options;
-
-      logger.info('Obteniendo historial de compras de cliente', {
-        clientId,
-        companyId,
-        page,
-        limit,
-        dateFrom,
-        dateTo
-      });
-
-      // Verificar que el cliente existe
-      const client = await Client.findByIdAndCompany(clientId, companyId);
-      if (!client) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Cliente no encontrado'
-        };
-      }
-
-      const history = await Client.getPurchaseHistory(clientId, {
-        page,
-        limit,
-        dateFrom,
-        dateTo
-      });
-
-      logger.info('Historial de compras obtenido', {
-        clientId,
-        companyId,
-        total: history.total,
-        returned: history.data.length
-      });
-
-      return history;
-
-    } catch (error) {
-      logger.error('Error obteniendo historial de compras', {
-        clientId,
-        companyId,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Obtener estadísticas del cliente
-   */
-  async getClientStats(clientId, companyId) {
-    try {
-      logger.info('Obteniendo estadísticas de cliente', {
-        clientId,
+        isActive,
         companyId
       });
-
+      throw error;
+    }
+  }
+  
+  /**
+   * Actualizar puntos del cliente
+   * @param {string} clientId - ID del cliente
+   * @param {number} pointsChange - Cambio en puntos (positivo o negativo)
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Cliente actualizado
+   */
+  static async updateClientPoints(clientId, pointsChange, companyId) {
+    try {
       // Verificar que el cliente existe
-      const client = await Client.findByIdAndCompany(clientId, companyId);
-      if (!client) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Cliente no encontrado'
-        };
+      const existingClient = await Client.findById(clientId, companyId);
+      if (!existingClient) {
+        throw new Error('Cliente no encontrado');
       }
-
-      const stats = await Client.getClientStats(clientId);
-
-      // Agregar balance de puntos actual
-      const pointsBalance = await Points.getClientBalance(clientId, companyId);
-      stats.current_points_balance = pointsBalance.available_points || 0;
-
-      logger.info('Estadísticas de cliente obtenidas', {
+      
+      // Actualizar puntos
+      await Client.updatePoints(clientId, pointsChange, companyId);
+      
+      // Obtener cliente actualizado
+      const updatedClient = await Client.findById(clientId, companyId);
+      
+      logger.info('Puntos de cliente actualizados:', {
         clientId,
         companyId,
-        stats
+        pointsChange,
+        newBalance: updatedClient.current_points
       });
-
-      return stats;
-
+      
+      return updatedClient;
     } catch (error) {
-      logger.error('Error obteniendo estadísticas de cliente', {
+      logger.error('Error actualizando puntos de cliente:', {
+        error: error.message,
         clientId,
-        companyId,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Obtener clientes más frecuentes
-   */
-  async getTopClients(companyId, options = {}) {
-    try {
-      const {
-        limit = 10,
-        dateFrom = null,
-        dateTo = null,
-        sortBy = 'purchase_count' // purchase_count, total_spent, points_balance
-      } = options;
-
-      logger.info('Obteniendo clientes más frecuentes', {
-        companyId,
-        limit,
-        sortBy,
-        dateFrom,
-        dateTo
-      });
-
-      const topClients = await Client.getTopClients(companyId, {
-        limit,
-        dateFrom,
-        dateTo,
-        sortBy
-      });
-
-      // Agregar balance de puntos actual a cada cliente
-      for (let client of topClients) {
-        const pointsBalance = await Points.getClientBalance(client.id, companyId);
-        client.current_points_balance = pointsBalance.available_points || 0;
-      }
-
-      logger.info('Clientes más frecuentes obtenidos', {
-        companyId,
-        count: topClients.length
-      });
-
-      return topClients;
-
-    } catch (error) {
-      logger.error('Error obteniendo clientes más frecuentes', {
-        companyId,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Obtener estadísticas generales de clientes de la empresa
-   */
-  async getCompanyClientStats(companyId) {
-    try {
-      logger.info('Obteniendo estadísticas de clientes de empresa', {
+        pointsChange,
         companyId
       });
-
-      const stats = await Client.getCompanyStats(companyId);
-
-      logger.info('Estadísticas de clientes de empresa obtenidas', {
+      throw error;
+    }
+  }
+  
+  /**
+   * Actualizar total de compras del cliente
+   * @param {string} clientId - ID del cliente
+   * @param {number} purchaseAmount - Monto de la compra
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Cliente actualizado
+   */
+  static async updateClientPurchases(clientId, purchaseAmount, companyId) {
+    try {
+      // Verificar que el cliente existe
+      const existingClient = await Client.findById(clientId, companyId);
+      if (!existingClient) {
+        throw new Error('Cliente no encontrado');
+      }
+      
+      // Actualizar total de compras
+      await Client.updateTotalPurchases(clientId, purchaseAmount, companyId);
+      
+      // Obtener cliente actualizado
+      const updatedClient = await Client.findById(clientId, companyId);
+      
+      logger.info('Total de compras de cliente actualizado:', {
+        clientId,
         companyId,
-        stats
+        purchaseAmount,
+        newTotal: updatedClient.total_purchases
       });
-
-      return stats;
-
+      
+      return updatedClient;
     } catch (error) {
-      logger.error('Error obteniendo estadísticas de clientes de empresa', {
+      logger.error('Error actualizando total de compras de cliente:', {
+        error: error.message,
+        clientId,
+        purchaseAmount,
+        companyId
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtener estadísticas de clientes
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Estadísticas de clientes
+   */
+  static async getClientStats(companyId) {
+    try {
+      const stats = await Client.getStats(companyId);
+      
+      logger.info('Estadísticas de clientes obtenidas:', {
         companyId,
-        error: error.message
+        totalClients: stats.total_clients
+      });
+      
+      return stats;
+    } catch (error) {
+      logger.error('Error obteniendo estadísticas de clientes:', {
+        error: error.message,
+        companyId
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Verificar si un cliente existe por identificador
+   * @param {string} identifier - Puede ser ID, documento, teléfono o email
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object|null>} Cliente encontrado o null
+   */
+  static async findClientByIdentifier(identifier, companyId) {
+    try {
+      const client = await Client.findByIdentifier(identifier, companyId);
+      
+      if (!client) {
+        throw new Error('Cliente no encontrado');
+      }
+      
+      return client;
+    } catch (error) {
+      logger.error('Error buscando cliente por identificador:', {
+        error: error.message,
+        identifier,
+        companyId
       });
       throw error;
     }
   }
 }
 
-module.exports = new ClientService();
+module.exports = ClientService;

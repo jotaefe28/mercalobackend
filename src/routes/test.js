@@ -17,6 +17,33 @@ const { authValidations } = require('../middlewares/validation.strict');
 if (process.env.NODE_ENV === 'development') {
   
   /**
+   * Test de CORS específico para frontend
+   */
+  router.options('/cors-frontend', (req, res) => {
+    res.header('Access-Control-Allow-Origin', req.get('Origin') || '*');
+    res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Origin, Accept');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.sendStatus(200);
+  });
+
+  router.get('/cors-frontend', (req, res) => {
+    console.log('🌐 CORS Frontend Test Request:');
+    console.log('- Origin:', req.get('Origin'));
+    console.log('- User-Agent:', req.get('User-Agent'));
+    console.log('- Cookies:', req.cookies);
+    
+    res.json({
+      success: true,
+      message: 'CORS frontend test passed successfully',
+      origin: req.get('Origin') || 'No origin header',
+      userAgent: req.get('User-Agent'),
+      cookies: req.cookies,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  /**
    * Test de CORS
    */
   router.get('/cors', (req, res) => {
@@ -25,6 +52,44 @@ if (process.env.NODE_ENV === 'development') {
       message: 'CORS test passed successfully',
       origin: req.get('Origin') || 'No origin header',
       headers: req.headers,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  /**
+   * Test de cookies
+   */
+  router.post('/cookies', (req, res) => {
+    // Configurar una cookie de test
+    res.cookie('test_cookie', 'test_value', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 60000 // 1 minuto
+    });
+
+    res.json({
+      success: true,
+      message: 'Cookie test - cookie has been set',
+      receivedCookies: req.cookies,
+      headers: {
+        origin: req.get('Origin'),
+        contentType: req.get('Content-Type'),
+        userAgent: req.get('User-Agent')
+      },
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  /**
+   * Test de lectura de cookies
+   */
+  router.get('/cookies', (req, res) => {
+    res.json({
+      success: true,
+      message: 'Cookie read test',
+      cookies: req.cookies,
+      hasCookies: Object.keys(req.cookies).length > 0,
       timestamp: new Date().toISOString()
     });
   });

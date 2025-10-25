@@ -1,349 +1,517 @@
 /**
- * Servicio de Ventas
+ * Servicio de Sale (Venta)
  * Sistema POS Multitenant
+ * 
+ * Lógica de negocio para ventas, integrado con productos, clientes, 
+ * métodos de pago, puntos y gestión de inventario
  */
 
-const Sale = require('../models/Sale');
-const Product = require('../models/Product');
-const Client = require('../models/Client');
-const Points = require('../models/Points');
-const productService = require('./productService');
-const pointsService = require('./pointsService');
-const paymentUtils = require('../utils/payment');
+const SaleModel = require('../models/sale.model');
+const ProductModel = require('../models/product.model');
+const ClientModel = require('../models/client.model');
+const PaymentMethodModel = require('../models/payment_method.model');
+const PointsModel = require('../models/points.model');
+const { executeQuery } = require('../config/database');
 const { logger } = require('../middlewares/logger');
-const { ERROR_CODES, RESPONSE_MESSAGES, SALE_STATUS, POINTS_REASONS } = require('../utils/constants');
 
 class SaleService {
   /**
-   * Procesar nueva venta
+   * Crear una nueva venta con validaciones completas
+   * @param {Object} saleData - Datos de la venta
+   * @param {string} companyId - ID de la empresa
+   * @param {string} userId - ID del usuario
+   * @returns {Promise<Object>} Venta creada
    */
-  async processSale(saleData, companyId, userId) {
+  static async createSale(saleData, companyId, userId) {
     try {
-      logger.info('Procesando nueva venta', {
+      logger.info('Iniciando proceso de creación de venta:', {
         companyId,
         userId,
-        total: saleData.total,
-        itemsCount: saleData.items?.length || 0
+        itemsCount: saleData.items?.length || 0,
+        total: saleData.total
       });
 
-      // Validar estructura básica
-      if (!saleData.items || saleData.items.length === 0) {
-        throw {
-          code: ERROR_CODES.VALIDATION_ERROR,
-          message: 'La venta debe incluir al menos un producto'
-        };
-      }
-
-      // Validar disponibilidad de productos
-      const productValidation = await productService.validateProductsAvailability(
-        saleData.items,
-        companyId
+      // 1. Validar que el usuario pertenece a la empresa
+      const [userResult] = await executeQuery(
+        'SELECT id FROM users WHERE id = ? AND company_id = ?',
+        [userId, companyId]
       );
-
-      const invalidProducts = productValidation.filter(p => !p.valid);
-      if (invalidProducts.length > 0) {
-        throw {
-          code: ERROR_CODES.INSUFFICIENT_STOCK,
-          message: 'Algunos productos no están disponibles',
-          details: invalidProducts
-        };
+      
+      if (!userResult || userResult.length === 0) {
+        throw new Error('Usuario no autorizado para esta empresa');
       }
 
-      // Calcular totales
-      const calculatedTotals = this.calculateTotals(saleData.items, productValidation);
-
-      // Validar cliente si hay uno
-      let client = null;
+      // 2. Validar cliente si se especifica
       if (saleData.client_id) {
-        client = await Client.findByIdAndCompany(saleData.client_id, companyId);
+        const client = await ClientModel.findById(saleData.client_id, companyId);
         if (!client) {
-          throw {
-            code: ERROR_CODES.RESOURCE_NOT_FOUND,
-            message: 'Cliente no encontrado'
-          };
+          throw new Error('Cliente no encontrado');
+        }
+
+        // Validar puntos disponibles si se van a redimir
+        if (saleData.points_redeemed && saleData.points_redeemed > 0) {
+          if (client.points_balance < saleData.points_redeemed) {
+            throw new Error(`Cliente no tiene suficientes puntos. Disponibles: ${client.points_balance}, Solicitados: ${saleData.points_redeemed}`);
+          }
         }
       }
 
-      // Procesar redención de puntos si aplica
-      let pointsRedeemed = 0;
-      if (saleData.points_to_redeem && saleData.points_to_redeem > 0) {
-        if (!client) {
-          throw {
-            code: ERROR_CODES.VALIDATION_ERROR,
-            message: 'Se requiere un cliente para redimir puntos'
-          };
-        }
-
-        const redemptionResult = await pointsService.validateRedemption(
-          client.id,
-          saleData.points_to_redeem,
-          companyId
-        );
-
-        if (!redemptionResult.valid) {
-          throw {
-            code: ERROR_CODES.INSUFFICIENT_POINTS,
-            message: redemptionResult.message
-          };
-        }
-
-        pointsRedeemed = saleData.points_to_redeem;
+      // 3. Validar productos y stock
+      const productValidations = await this.validateProductsAndStock(saleData.items, companyId);
+      if (!productValidations.valid) {
+        throw new Error(productValidations.message);
       }
 
-      // Validar pagos
-      const paymentValidation = paymentUtils.validatePayments(
-        saleData.payments,
-        calculatedTotals.final_total - pointsRedeemed
-      );
-
-      if (!paymentValidation.valid) {
-        throw {
-          code: ERROR_CODES.VALIDATION_ERROR,
-          message: paymentValidation.message,
-          details: paymentValidation.details
-        };
+      // 4. Validar métodos de pago
+      const paymentValidations = await this.validatePaymentMethods(saleData.payment_methods, companyId);
+      if (!paymentValidations.valid) {
+        throw new Error(paymentValidations.message);
       }
 
-      // Preparar datos de la venta
-      const saleToCreate = {
-        company_id: companyId,
-        user_id: userId,
-        client_id: saleData.client_id || null,
-        invoice_number: await this.generateInvoiceNumber(companyId),
-        subtotal: calculatedTotals.subtotal,
-        tax_amount: calculatedTotals.tax_amount,
-        discount_amount: saleData.discount_amount || 0,
-        points_redeemed: pointsRedeemed,
-        total: calculatedTotals.final_total - pointsRedeemed,
-        status: SALE_STATUS.COMPLETED,
-        delivery_type: saleData.delivery_type,
-        delivery_address: saleData.delivery_address || null,
-        notes: saleData.notes || null,
-        items: saleData.items,
-        payments: saleData.payments
+      // 5. Validar cálculos totales
+      const calculationValidation = this.validateCalculations(saleData);
+      if (!calculationValidation.valid) {
+        throw new Error(calculationValidation.message);
+      }
+
+      // 6. Generar número de factura único
+      const invoiceNumber = await this.generateInvoiceNumber(companyId);
+      saleData.invoice_number = invoiceNumber;
+      saleData.user_id = userId;
+
+      // 7. Crear la venta
+      const saleId = await SaleModel.create(saleData, companyId);
+
+      // 8. Obtener la venta completa creada
+      const createdSale = await SaleModel.findById(saleId, companyId);
+
+      logger.info('Venta creada exitosamente:', {
+        saleId,
+        invoiceNumber,
+        companyId,
+        userId,
+        total: saleData.total
+      });
+
+      return {
+        success: true,
+        sale: createdSale,
+        message: 'Venta creada exitosamente'
       };
 
-      // Crear la venta usando stored procedure
-      const sale = await Sale.createWithTransaction(saleToCreate);
+    } catch (error) {
+      logger.error('Error en creación de venta:', {
+        error: error.message,
+        saleData: {
+          ...saleData,
+          items: `${saleData.items?.length || 0} items`
+        },
+        companyId,
+        userId
+      });
+      
+      throw error;
+    }
+  }
 
-      // Actualizar stock de productos
-      for (const item of saleData.items) {
-        await productService.updateStock(
-          item.product_id,
-          item.quantity,
-          'OUT',
-          `Venta #${sale.invoice_number}`,
-          companyId,
-          userId
-        );
-      }
+  /**
+   * Validar productos y stock disponible
+   * @param {Array} items - Items de la venta
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Resultado de validación
+   */
+  static async validateProductsAndStock(items, companyId) {
+    try {
+      const invalidItems = [];
 
-      // Procesar redención de puntos
-      if (pointsRedeemed > 0) {
-        await pointsService.redeemPoints(
-          client.id,
-          pointsRedeemed,
-          companyId,
-          `Venta #${sale.invoice_number}`
-        );
-      }
+      for (const item of items) {
+        // Obtener producto
+        const product = await ProductModel.findById(item.product_id, companyId);
+        
+        if (!product) {
+          invalidItems.push({
+            product_id: item.product_id,
+            reason: 'Producto no encontrado'
+          });
+          continue;
+        }
 
-      // Agregar puntos por compra (si hay cliente)
-      if (client) {
-        const pointsToAdd = Math.floor(calculatedTotals.final_total);
-        if (pointsToAdd > 0) {
-          await pointsService.addPoints(
-            client.id,
-            pointsToAdd,
-            companyId,
-            `Venta #${sale.invoice_number}`
-          );
+        // Verificar si está activo
+        if (product.status !== 'active') {
+          invalidItems.push({
+            product_id: item.product_id,
+            product_name: product.name,
+            reason: 'Producto no está activo'
+          });
+          continue;
+        }
+
+        // Verificar stock disponible
+        if (product.track_stock && product.stock < item.quantity) {
+          invalidItems.push({
+            product_id: item.product_id,
+            product_name: product.name,
+            reason: `Stock insuficiente. Disponible: ${product.stock}, Requerido: ${item.quantity}`
+          });
+          continue;
+        }
+
+        // Verificar precio mínimo
+        if (product.min_price && item.unit_price < product.min_price) {
+          invalidItems.push({
+            product_id: item.product_id,
+            product_name: product.name,
+            reason: `Precio por debajo del mínimo. Mínimo: $${product.min_price}, Actual: $${item.unit_price}`
+          });
         }
       }
 
-      logger.info('Venta procesada exitosamente', {
-        saleId: sale.id,
-        invoiceNumber: sale.invoice_number,
-        total: sale.total,
-        companyId
-      });
+      if (invalidItems.length > 0) {
+        return {
+          valid: false,
+          message: 'Algunos productos no pasaron la validación',
+          invalidItems
+        };
+      }
 
-      return sale;
+      return { valid: true };
 
     } catch (error) {
-      logger.error('Error procesando venta', {
-        companyId,
-        userId,
-        error: error.message
-      });
-      throw error;
+      logger.error('Error validando productos y stock:', error);
+      return {
+        valid: false,
+        message: 'Error validando productos'
+      };
+    }
+  }
+
+  /**
+   * Validar métodos de pago
+   * @param {Array} paymentMethods - Métodos de pago
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Resultado de validación
+   */
+  static async validatePaymentMethods(paymentMethods, companyId) {
+    try {
+      if (!paymentMethods || paymentMethods.length === 0) {
+        return {
+          valid: false,
+          message: 'Debe especificar al menos un método de pago'
+        };
+      }
+
+      const invalidMethods = [];
+
+      for (const payment of paymentMethods) {
+        // Verificar que el método de pago existe y está activo
+        const paymentMethod = await PaymentMethodModel.findById(payment.method_id, companyId);
+        
+        if (!paymentMethod) {
+          invalidMethods.push({
+            method_id: payment.method_id,
+            reason: 'Método de pago no encontrado'
+          });
+          continue;
+        }
+
+        if (!paymentMethod.is_active) {
+          invalidMethods.push({
+            method_id: payment.method_id,
+            method_name: paymentMethod.name,
+            reason: 'Método de pago no está activo'
+          });
+        }
+      }
+
+      if (invalidMethods.length > 0) {
+        return {
+          valid: false,
+          message: 'Algunos métodos de pago no son válidos',
+          invalidMethods
+        };
+      }
+
+      return { valid: true };
+
+    } catch (error) {
+      logger.error('Error validando métodos de pago:', error);
+      return {
+        valid: false,
+        message: 'Error validando métodos de pago'
+      };
+    }
+  }
+
+  /**
+   * Validar cálculos de la venta
+   * @param {Object} saleData - Datos de la venta
+   * @returns {Object} Resultado de validación
+   */
+  static validateCalculations(saleData) {
+    try {
+      // Calcular subtotal de items
+      const calculatedSubtotal = saleData.items.reduce((sum, item) => {
+        return sum + item.subtotal;
+      }, 0);
+
+      // Verificar que el subtotal coincide
+      if (Math.abs(calculatedSubtotal - saleData.subtotal) > 0.01) {
+        return {
+          valid: false,
+          message: `Subtotal incorrecto. Calculado: $${calculatedSubtotal.toFixed(2)}, Enviado: $${saleData.subtotal.toFixed(2)}`
+        };
+      }
+
+      // Calcular total final
+      const calculatedTotal = saleData.subtotal + 
+                             (saleData.tax_amount || 0) + 
+                             (saleData.delivery_fee || 0) - 
+                             (saleData.discount_amount || 0) - 
+                             (saleData.points_redeemed || 0);
+
+      // Verificar que el total coincide
+      if (Math.abs(calculatedTotal - saleData.total) > 0.01) {
+        return {
+          valid: false,
+          message: `Total incorrecto. Calculado: $${calculatedTotal.toFixed(2)}, Enviado: $${saleData.total.toFixed(2)}`
+        };
+      }
+
+      // Validar que los montos de pago sumen el total
+      const totalPayments = saleData.payment_methods.reduce((sum, payment) => {
+        return sum + payment.amount;
+      }, 0);
+
+      if (Math.abs(totalPayments - saleData.total) > 0.01) {
+        return {
+          valid: false,
+          message: `Los pagos no suman el total. Total pagos: $${totalPayments.toFixed(2)}, Total venta: $${saleData.total.toFixed(2)}`
+        };
+      }
+
+      // Validar subtotales de items
+      for (const item of saleData.items) {
+        const expectedSubtotal = (item.unit_price * item.quantity) - (item.discount_amount || 0);
+        if (Math.abs(expectedSubtotal - item.subtotal) > 0.01) {
+          return {
+            valid: false,
+            message: `Subtotal de item incorrecto. Producto: ${item.product_id}`
+          };
+        }
+      }
+
+      return { valid: true };
+
+    } catch (error) {
+      logger.error('Error validando cálculos:', error);
+      return {
+        valid: false,
+        message: 'Error validando cálculos'
+      };
+    }
+  }
+
+  /**
+   * Generar número de factura único
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<string>} Número de factura
+   */
+  static async generateInvoiceNumber(companyId) {
+    try {
+      // Obtener el último número de factura
+      const [lastSale] = await executeQuery(`
+        SELECT invoice_number 
+        FROM sales 
+        WHERE company_id = ? 
+        ORDER BY created_at DESC 
+        LIMIT 1
+      `, [companyId]);
+
+      let nextNumber = 1;
+
+      if (lastSale && lastSale.length > 0) {
+        const lastNumber = lastSale[0].invoice_number;
+        // Extraer el número si sigue el formato FAC-XXXXXX
+        const match = lastNumber.match(/FAC-(\d+)/);
+        if (match) {
+          nextNumber = parseInt(match[1]) + 1;
+        }
+      }
+
+      // Generar nuevo número con padding
+      const invoiceNumber = `FAC-${nextNumber.toString().padStart(6, '0')}`;
+
+      // Verificar que no existe (por si hay concurrencia)
+      const [existing] = await executeQuery(`
+        SELECT id FROM sales WHERE invoice_number = ? AND company_id = ?
+      `, [invoiceNumber, companyId]);
+
+      if (existing && existing.length > 0) {
+        // Si existe, generar uno con timestamp
+        const timestamp = Date.now().toString().slice(-6);
+        return `FAC-${timestamp}`;
+      }
+
+      return invoiceNumber;
+
+    } catch (error) {
+      logger.error('Error generando número de factura:', error);
+      // Fallback: usar timestamp
+      const timestamp = Date.now().toString().slice(-8);
+      return `FAC-${timestamp}`;
     }
   }
 
   /**
    * Obtener venta por ID
+   * @param {string} saleId - ID de la venta
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Venta encontrada
    */
-  async getSaleById(saleId, companyId) {
+  static async getSaleById(saleId, companyId) {
     try {
-      const sale = await Sale.findByIdAndCompany(saleId, companyId);
-      if (!sale) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Venta no encontrada'
-        };
-      }
-
-      return sale;
-
-    } catch (error) {
-      logger.error('Error obteniendo venta', {
-        saleId,
-        companyId,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Listar ventas
-   */
-  async getSales(companyId, options = {}) {
-    try {
-      const {
-        page = 1,
-        limit = 20,
-        dateFrom = null,
-        dateTo = null,
-        status = null,
-        clientId = null,
-        userId = null,
-        sortBy = 'created_at',
-        sortOrder = 'desc'
-      } = options;
-
-      logger.info('Listando ventas', {
-        companyId,
-        page,
-        limit,
-        dateFrom,
-        dateTo,
-        status,
-        clientId,
-        userId
-      });
-
-      const filters = { company_id: companyId };
+      const sale = await SaleModel.findById(saleId, companyId);
       
-      if (status) filters.status = status;
-      if (clientId) filters.client_id = clientId;
-      if (userId) filters.user_id = userId;
+      if (!sale) {
+        throw new Error('Venta no encontrada');
+      }
 
-      const result = await Sale.findAll(filters, {
-        page,
-        limit,
-        dateFrom,
-        dateTo,
-        sortBy,
-        sortOrder
-      });
-
-      logger.info('Ventas listadas exitosamente', {
-        companyId,
-        total: result.total,
-        returned: result.data.length
-      });
-
-      return result;
+      return {
+        success: true,
+        sale
+      };
 
     } catch (error) {
-      logger.error('Error listando ventas', {
-        companyId,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Anular venta
-   */
-  async voidSale(saleId, reason, companyId, userId) {
-    try {
-      logger.info('Anulando venta', {
+      logger.error('Error obteniendo venta:', {
+        error: error.message,
         saleId,
-        reason,
-        companyId,
-        userId
-      });
-
-      // Obtener la venta
-      const sale = await Sale.findByIdAndCompany(saleId, companyId);
-      if (!sale) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Venta no encontrada'
-        };
-      }
-
-      if (sale.status === SALE_STATUS.VOID) {
-        throw {
-          code: ERROR_CODES.BUSINESS_RULE_VIOLATION,
-          message: 'La venta ya está anulada'
-        };
-      }
-
-      // Anular la venta
-      const voidedSale = await Sale.voidSale(saleId, reason, userId);
-
-      // Restaurar stock de productos
-      for (const item of sale.items) {
-        await productService.updateStock(
-          item.product_id,
-          item.quantity,
-          'IN',
-          `Anulación venta #${sale.invoice_number}`,
-          companyId,
-          userId
-        );
-      }
-
-      // Restaurar puntos redimidos
-      if (sale.points_redeemed > 0 && sale.client_id) {
-        await pointsService.addPoints(
-          sale.client_id,
-          sale.points_redeemed,
-          companyId,
-          `Anulación venta #${sale.invoice_number}`
-        );
-      }
-
-      // Remover puntos ganados por la compra
-      if (sale.client_id) {
-        const pointsToRemove = Math.floor(sale.total);
-        if (pointsToRemove > 0) {
-          await pointsService.removePoints(
-            sale.client_id,
-            pointsToRemove,
-            companyId,
-            `Anulación venta #${sale.invoice_number}`
-          );
-        }
-      }
-
-      logger.info('Venta anulada exitosamente', {
-        saleId,
-        invoiceNumber: sale.invoice_number,
         companyId
       });
+      throw error;
+    }
+  }
 
-      return voidedSale;
+  /**
+   * Obtener ventas con filtros
+   * @param {Object} filters - Filtros de búsqueda
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Ventas con paginación
+   */
+  static async getSales(filters, companyId) {
+    try {
+      const result = await SaleModel.findAll(filters, companyId);
+
+      return {
+        success: true,
+        ...result
+      };
 
     } catch (error) {
-      logger.error('Error anulando venta', {
+      logger.error('Error obteniendo ventas:', {
+        error: error.message,
+        filters,
+        companyId
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Cancelar una venta
+   * @param {string} saleId - ID de la venta
+   * @param {string} companyId - ID de la empresa
+   * @param {string} reason - Razón de cancelación
+   * @returns {Promise<Object>} Resultado de cancelación
+   */
+  static async cancelSale(saleId, companyId, reason) {
+    try {
+      // Verificar que la venta existe
+      const sale = await SaleModel.findById(saleId, companyId);
+      
+      if (!sale) {
+        throw new Error('Venta no encontrada');
+      }
+
+      if (sale.status === 'cancelled') {
+        throw new Error('La venta ya está cancelada');
+      }
+
+      // Cancelar la venta
+      const success = await SaleModel.cancel(saleId, companyId, reason);
+
+      if (!success) {
+        throw new Error('No se pudo cancelar la venta');
+      }
+
+      logger.info('Venta cancelada exitosamente:', {
         saleId,
         companyId,
-        error: error.message
+        reason
+      });
+
+      return {
+        success: true,
+        message: 'Venta cancelada exitosamente'
+      };
+
+    } catch (error) {
+      logger.error('Error cancelando venta:', {
+        error: error.message,
+        saleId,
+        companyId
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Actualizar una venta
+   * @param {string} saleId - ID de la venta
+   * @param {Object} updateData - Datos a actualizar
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Resultado de actualización
+   */
+  static async updateSale(saleId, updateData, companyId) {
+    try {
+      // Verificar que la venta existe
+      const sale = await SaleModel.findById(saleId, companyId);
+      
+      if (!sale) {
+        throw new Error('Venta no encontrada');
+      }
+
+      if (sale.status === 'cancelled') {
+        throw new Error('No se puede actualizar una venta cancelada');
+      }
+
+      // Actualizar la venta
+      const success = await SaleModel.update(saleId, updateData, companyId);
+
+      if (!success) {
+        throw new Error('No se pudo actualizar la venta');
+      }
+
+      // Obtener la venta actualizada
+      const updatedSale = await SaleModel.findById(saleId, companyId);
+
+      logger.info('Venta actualizada exitosamente:', {
+        saleId,
+        companyId,
+        updateData
+      });
+
+      return {
+        success: true,
+        sale: updatedSale,
+        message: 'Venta actualizada exitosamente'
+      };
+
+    } catch (error) {
+      logger.error('Error actualizando venta:', {
+        error: error.message,
+        saleId,
+        updateData,
+        companyId
       });
       throw error;
     }
@@ -351,39 +519,53 @@ class SaleService {
 
   /**
    * Obtener resumen de ventas
+   * @param {string} companyId - ID de la empresa
+   * @param {string} dateFrom - Fecha desde
+   * @param {string} dateTo - Fecha hasta
+   * @returns {Promise<Object>} Resumen de ventas
    */
-  async getSalesSummary(companyId, options = {}) {
+  static async getSalesSummary(companyId, dateFrom, dateTo) {
     try {
-      const {
-        dateFrom = null,
-        dateTo = null,
-        groupBy = 'day' // day, week, month
-      } = options;
+      const summary = await SaleModel.getSalesSummary(companyId, dateFrom, dateTo);
 
-      logger.info('Obteniendo resumen de ventas', {
-        companyId,
-        dateFrom,
-        dateTo,
-        groupBy
-      });
-
-      const summary = await Sale.getSalesSummary(companyId, {
-        dateFrom,
-        dateTo,
-        groupBy
-      });
-
-      logger.info('Resumen de ventas obtenido', {
-        companyId,
-        periodsCount: summary.length
-      });
-
-      return summary;
+      return {
+        success: true,
+        ...summary
+      };
 
     } catch (error) {
-      logger.error('Error obteniendo resumen de ventas', {
+      logger.error('Error obteniendo resumen de ventas:', {
+        error: error.message,
         companyId,
-        error: error.message
+        dateFrom,
+        dateTo
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Obtener ventas por día
+   * @param {string} companyId - ID de la empresa
+   * @param {string} dateFrom - Fecha desde
+   * @param {string} dateTo - Fecha hasta
+   * @returns {Promise<Object>} Ventas por día
+   */
+  static async getSalesByDay(companyId, dateFrom, dateTo) {
+    try {
+      const salesByDay = await SaleModel.getSalesByDay(companyId, dateFrom, dateTo);
+
+      return {
+        success: true,
+        sales_by_day: salesByDay
+      };
+
+    } catch (error) {
+      logger.error('Error obteniendo ventas por día:', {
+        error: error.message,
+        companyId,
+        dateFrom,
+        dateTo
       });
       throw error;
     }
@@ -391,115 +573,54 @@ class SaleService {
 
   /**
    * Obtener productos más vendidos
+   * @param {string} companyId - ID de la empresa
+   * @param {Object} options - Opciones de consulta
+   * @returns {Promise<Object>} Productos más vendidos
    */
-  async getTopSellingProducts(companyId, options = {}) {
+  static async getTopSellingProducts(companyId, options = {}) {
     try {
-      const {
-        dateFrom = null,
-        dateTo = null,
-        limit = 10
-      } = options;
+      const products = await SaleModel.getTopSellingProducts(companyId, options);
 
-      logger.info('Obteniendo productos más vendidos', {
-        companyId,
-        dateFrom,
-        dateTo,
-        limit
-      });
-
-      const topProducts = await Sale.getTopSellingProducts(companyId, {
-        dateFrom,
-        dateTo,
-        limit
-      });
-
-      logger.info('Productos más vendidos obtenidos', {
-        companyId,
-        count: topProducts.length
-      });
-
-      return topProducts;
+      return {
+        success: true,
+        products
+      };
 
     } catch (error) {
-      logger.error('Error obteniendo productos más vendidos', {
+      logger.error('Error obteniendo productos más vendidos:', {
+        error: error.message,
         companyId,
-        error: error.message
+        options
       });
       throw error;
     }
   }
 
   /**
-   * Calcular totales de la venta
+   * Obtener ventas por cliente
+   * @param {string} clientId - ID del cliente
+   * @param {string} companyId - ID de la empresa
+   * @param {Object} options - Opciones de consulta
+   * @returns {Promise<Object>} Ventas del cliente
    */
-  calculateTotals(items, productValidation) {
-    let subtotal = 0;
-
-    for (const item of items) {
-      const productInfo = productValidation.find(p => p.product_id === item.product_id);
-      if (productInfo && productInfo.valid) {
-        const itemTotal = productInfo.product.price * item.quantity;
-        subtotal += itemTotal;
-      }
-    }
-
-    const tax_amount = subtotal * 0.19; // 19% IVA Colombia
-    const final_total = subtotal + tax_amount;
-
-    return {
-      subtotal,
-      tax_amount,
-      final_total
-    };
-  }
-
-  /**
-   * Generar número de factura
-   */
-  async generateInvoiceNumber(companyId) {
+  static async getSalesByClient(clientId, companyId, options = {}) {
     try {
-      const lastSale = await Sale.getLastSale(companyId);
-      let nextNumber = 1;
+      const sales = await SaleModel.findByClient(clientId, companyId, options);
 
-      if (lastSale && lastSale.invoice_number) {
-        const currentNumber = parseInt(lastSale.invoice_number.replace(/\D/g, '')) || 0;
-        nextNumber = currentNumber + 1;
-      }
-
-      return `INV-${String(nextNumber).padStart(6, '0')}`;
-
-    } catch (error) {
-      logger.error('Error generando número de factura', {
-        companyId,
-        error: error.message
-      });
-      // Fallback con timestamp
-      return `INV-${Date.now()}`;
-    }
-  }
-
-  /**
-   * Validar límites de plan para ventas
-   */
-  async validateSaleLimits(companyId) {
-    try {
-      const { canCreate, currentCount, limit } = await Sale.checkPlanLimits(companyId);
-      
       return {
-        canCreate,
-        currentCount,
-        limit,
-        remaining: limit === -1 ? -1 : limit - currentCount
+        success: true,
+        sales
       };
 
     } catch (error) {
-      logger.error('Error validando límites de ventas', {
-        companyId,
-        error: error.message
+      logger.error('Error obteniendo ventas por cliente:', {
+        error: error.message,
+        clientId,
+        companyId
       });
       throw error;
     }
   }
 }
 
-module.exports = new SaleService();
+module.exports = SaleService;

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test CORS Login</title>
+</head>
+<body>
+    <h1>Test de Login con CORS</h1>
+    <button onclick="testLogin()">Probar Login</button>
+    <div id="resultado"></div>
+
+    <script>
+        async function testLogin() {
+            const resultado = document.getElementById('resultado');
+            resultado.innerHTML = '<p>🔄 Probando login...</p>';
+            
+            try {
+                console.log('Enviando petición a http://localhost:3002/api/auth/login');
+                
+                const response = await fetch('http://localhost:3002/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        email: 'admin@mercalo.com',
+                        password: 'admin123'
+                    })
+                });
+                
+                console.log('Respuesta recibida:', response.status);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultado.innerHTML = `
+                        <p>✅ Login exitoso!</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    const error = await response.json();
+                    resultado.innerHTML = `
+                        <p>❌ Error ${response.status}:</p>
+                        <pre>${JSON.stringify(error, null, 2)}</pre>
+                    `;
+                }
+                
+            } catch (error) {
+                console.error('Error de red:', error);
+                resultado.innerHTML = `
+                    <p>💥 Error de red:</p>
+                    <p>${error.message}</p>
+                    <p>Verifica la consola del navegador para más detalles</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

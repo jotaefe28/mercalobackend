@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Login CORS - MercaloPOS</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .result {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test Login CORS</h1>
+        <p><strong>Backend:</strong> http://localhost:3002/api</p>
+        <p><strong>Credenciales:</strong> admin@tiendademo.com / Admin123!</p>
+        
+        <button onclick="testCors()">1. Probar CORS</button>
+        <button onclick="testLogin()">2. Probar Login</button>
+        <button onclick="testVerify()" id="verifyBtn" disabled>3. Verificar Auth</button>
+        <button onclick="clearResults()">Limpiar</button>
+        
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3002/api';
+        
+        function addResult(title, content, type = 'info') {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `result ${type}`;
+            resultDiv.innerHTML = `<h3>${title}</h3><pre>${content}</pre>`;
+            resultsDiv.appendChild(resultDiv);
+        }
+        
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+        
+        async function testCors() {
+            addResult('🔄 Probando CORS...', 'Enviando request de prueba...', 'info');
+            
+            try {
+                const response = await fetch(`${API_URL}/test/cors-frontend`, {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                addResult('✅ CORS Test Exitoso', JSON.stringify(data, null, 2), 'success');
+                
+            } catch (error) {
+                addResult('❌ CORS Test Falló', `Error: ${error.message}\n\nEsto indica que hay problemas de CORS.`, 'error');
+                console.error('CORS Error:', error);
+            }
+        }
+        
+        async function testLogin() {
+            addResult('🔄 Probando Login...', 'Enviando credenciales...', 'info');
+            
+            const credentials = {
+                email: 'admin@tiendademo.com',
+                password: 'Admin123!'
+            };
+            
+            try {
+                console.log('Enviando login request...');
+                
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include', // Para cookies automáticas
+                    body: JSON.stringify(credentials),
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', [...response.headers.entries()]);
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(`HTTP ${response.status}: ${errorData.message || response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('Login response:', data);
+                
+                addResult('✅ Login Exitoso', JSON.stringify(data, null, 2), 'success');
+                
+                // Habilitar botón de verificación
+                document.getElementById('verifyBtn').disabled = false;
+                
+            } catch (error) {
+                console.error('Login error:', error);
+                addResult('❌ Login Falló', `Error: ${error.message}\n\nRevisa las credenciales y la configuración CORS.`, 'error');
+            }
+        }
+        
+        async function testVerify() {
+            addResult('🔄 Verificando Autenticación...', 'Usando cookies automáticas...', 'info');
+            
+            try {
+                const response = await fetch(`${API_URL}/auth/verify`, {
+                    method: 'GET',
+                    credentials: 'include', // Las cookies se envían automáticamente
+                });
+
+                console.log('Verify response status:', response.status);
+
+                if (response.status === 401) {
+                    addResult('❌ No Autenticado', 'No hay cookie de sesión válida.', 'error');
+                    return;
+                }
+
+                if (response.status === 403) {
+                    addResult('❌ Token Inválido', 'Cookie de sesión expirada o inválida.', 'error');
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('Verify response:', data);
+                
+                addResult('✅ Autenticación Verificada', JSON.stringify(data, null, 2), 'success');
+                
+            } catch (error) {
+                console.error('Verify error:', error);
+                addResult('❌ Error en Verificación', `Error: ${error.message}`, 'error');
+            }
+        }
+        
+        // Log inicial
+        console.log('🚀 Test de CORS/Login cargado');
+        console.log('API URL:', API_URL);
+        console.log('Navegador:', navigator.userAgent);
+    </script>
+</body>
+</html>

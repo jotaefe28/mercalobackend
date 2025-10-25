@@ -5,122 +5,236 @@
 
 const jwt = require('jsonwebtoken');
 const { logger } = require('./logger');
-const { extractCompanyIdFromRequest } = require('../config/tenantResolver');
+const jwtUtils = require('../utils/jwt');
+const User = require('../models/User');
+const Company = require('../models/Company');
+
+// Códigos de error consistentes
+const ERROR_CODES = {
+  TOKEN_REQUIRED: 'TOKEN_REQUIRED',
+  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+  TOKEN_INVALID: 'TOKEN_INVALID',
+  USER_NOT_FOUND: 'USER_NOT_FOUND',
+  USER_INACTIVE: 'USER_INACTIVE',
+  COMPANY_INACTIVE: 'COMPANY_INACTIVE',
+  AUTH_ERROR: 'AUTH_ERROR'
+};
 
 /**
  * Middleware para verificar token JWT
- * Soporta tokens en cookies httpOnly y en header Authorization
+ * Soporta tokens en cookies httpOnly (preferido) y en header Authorization (fallback)
  */
 const authenticateToken = async (req, res, next) => {
+  console.log('🛡️ [AuthMiddleware] === INICIO AUTHENTICATE TOKEN ===');
+  console.log('🛡️ [AuthMiddleware] URL:', req.method, req.url);
+  console.log('🛡️ [AuthMiddleware] Headers:', {
+    origin: req.headers.origin,
+    authorization: req.headers.authorization ? 'Present' : 'Missing',
+    userAgent: req.headers['user-agent']
+  });
+  console.log('🛡️ [AuthMiddleware] Cookies recibidas:', req.cookies);
+
   try {
     let token = null;
+    let tokenSource = 'none';
     
-    // Intentar obtener token del header Authorization
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.substring(7);
+    // Prioridad 1: Intentar obtener token de cookies httpOnly (más seguro)
+    if (req.cookies && req.cookies.access_token) {
+      token = req.cookies.access_token;
+      tokenSource = 'cookie:access_token';
+      console.log('✅ [AuthMiddleware] Token encontrado en access_token cookie');
     }
     
-    // Si no hay token en header, intentar obtener de cookies
-    if (!token && req.cookies && req.cookies.accessToken) {
-      token = req.cookies.accessToken;
+    // Prioridad 1.5: Compatibilidad con nombre de cookie 'token'
+    if (!token && req.cookies && req.cookies.token) {
+      token = req.cookies.token;
+      tokenSource = 'cookie:token';
+      console.log('✅ [AuthMiddleware] Token encontrado en token cookie');
+    }
+    
+    // Prioridad 2: Fallback al header Authorization para compatibilidad
+    if (!token) {
+      console.log('🛡️ [AuthMiddleware] No token en cookies, buscando en headers...');
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+        tokenSource = 'header';
+        console.log('✅ [AuthMiddleware] Token encontrado en Authorization header');
+      }
     }
     
     if (!token) {
+      console.log('❌ [AuthMiddleware] No token encontrado en ningún lugar');
       logger.warn('Token de acceso no proporcionado', {
         ip: req.ip,
         url: req.url,
-        userAgent: req.get('User-Agent')
+        userAgent: req.get('User-Agent'),
+        hasCookies: !!req.cookies,
+        hasAuthHeader: !!req.headers.authorization,
+        cookieKeys: req.cookies ? Object.keys(req.cookies) : []
       });
       
       return res.status(401).json({
         success: false,
         message: 'Token de acceso requerido',
-        error: {
-          code: 'MISSING_TOKEN',
-          details: ['Token JWT no proporcionado en header Authorization o cookies']
-        }
+        code: ERROR_CODES.TOKEN_REQUIRED
       });
     }
+
+    console.log('🛡️ [AuthMiddleware] Token encontrado via:', tokenSource);
+    console.log('🛡️ [AuthMiddleware] Token (primeros 20 chars):', token.substring(0, 20) + '...');
+
+    // Verificar el token
+    console.log('🛡️ [AuthMiddleware] Verificando token con jwtUtils...');
+    const decoded = jwtUtils.verifyAccessToken(token);
     
-    // Verificar y decodificar token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log('✅ [AuthMiddleware] Token decodificado exitosamente:', {
+      user_id: decoded.user_id,
+      email: decoded.email,
+      role: decoded.role,
+      company_id: decoded.company_id,
+      exp: new Date(decoded.exp * 1000).toISOString(),
+      iat: new Date(decoded.iat * 1000).toISOString()
+    });
     
-    // Validar campos requeridos en el token
-    if (!decoded.userId || !decoded.company_id || !decoded.role) {
-      logger.warn('Token JWT con campos faltantes', {
-        tokenFields: Object.keys(decoded),
+    // Verificar que el usuario y empresa sigan activos
+    console.log('🛡️ [AuthMiddleware] Verificando usuario activo...');
+    const user = await User.findById(decoded.user_id);
+    
+    if (!user) {
+      console.log('❌ [AuthMiddleware] Usuario no encontrado en BD:', decoded.user_id);
+      logger.warn('Usuario no encontrado para token válido', {
+        userId: decoded.user_id,
+        tokenSource,
         ip: req.ip
       });
       
       return res.status(401).json({
         success: false,
-        message: 'Token inválido - campos requeridos faltantes',
-        error: {
-          code: 'INVALID_TOKEN_STRUCTURE',
-          details: ['Token no contiene userId, company_id o role']
-        }
+        message: 'Usuario no encontrado',
+        code: ERROR_CODES.USER_NOT_FOUND
       });
     }
     
-    // Agregar información del usuario a la request
+    if (!user.is_active) {
+      console.log('❌ [AuthMiddleware] Usuario inactivo:', user.id);
+      logger.warn('Acceso denegado: usuario inactivo', {
+        userId: user.id,
+        tokenSource,
+        ip: req.ip
+      });
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario inactivo',
+        code: ERROR_CODES.USER_INACTIVE
+      });
+    }
+
+    console.log('✅ [AuthMiddleware] Usuario activo verificado:', {
+      id: user.id,
+      name: user.name,
+      email: user.email
+    });
+
+    console.log('🛡️ [AuthMiddleware] Verificando empresa activa...');
+    const company = await Company.findById(decoded.company_id);
+    
+    if (!company || !company.is_active) {
+      console.log('❌ [AuthMiddleware] Empresa no encontrada o inactiva:', {
+        company_id: decoded.company_id,
+        found: !!company,
+        is_active: company?.is_active
+      });
+      
+      logger.warn('Acceso denegado: empresa inactiva', {
+        companyId: decoded.company_id,
+        userId: decoded.user_id,
+        tokenSource,
+        ip: req.ip
+      });
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Empresa inactiva',
+        code: ERROR_CODES.COMPANY_INACTIVE
+      });
+    }
+
+    console.log('✅ [AuthMiddleware] Empresa activa verificada:', {
+      id: company.id,
+      name: company.name
+    });
+    
+    // Adjuntar información del usuario y empresa al request
     req.user = {
-      id: decoded.userId,
+      user_id: decoded.user_id,
       company_id: decoded.company_id,
       role: decoded.role,
       email: decoded.email,
       name: decoded.name,
-      tokenIssuedAt: decoded.iat,
-      tokenExpiresAt: decoded.exp
+      tokenSource: tokenSource
     };
     
-    // Log de autenticación exitosa
-    logger.info('Autenticación exitosa', {
-      userId: req.user.id,
-      companyId: req.user.company_id,
-      role: req.user.role,
-      url: req.url,
-      method: req.method,
-      ip: req.ip
-    });
+    req.company = {
+      id: company.id,
+      name: company.name,
+      plan: company.plan
+    };
+
+    console.log('✅ [AuthMiddleware] Datos adjuntados a req.user:', req.user);
+    console.log('✅ [AuthMiddleware] Datos adjuntados a req.company:', req.company);
     
+    logger.info('Usuario autenticado exitosamente', {
+      userId: decoded.user_id,
+      companyId: decoded.company_id,
+      role: decoded.role,
+      tokenSource: tokenSource,
+      ip: req.ip,
+      url: req.url
+    });
+
+    console.log('🛡️ [AuthMiddleware] === FIN AUTHENTICATE TOKEN EXITOSO ===');
     next();
     
   } catch (error) {
-    // Manejar diferentes tipos de errores JWT
-    let errorCode = 'INVALID_TOKEN';
-    let errorMessage = 'Token inválido';
-    let statusCode = 401;
-    
-    if (error.name === 'TokenExpiredError') {
-      errorCode = 'TOKEN_EXPIRED';
-      errorMessage = 'Token expirado';
-      statusCode = 401;
-    } else if (error.name === 'JsonWebTokenError') {
-      errorCode = 'MALFORMED_TOKEN';
-      errorMessage = 'Token malformado';
-      statusCode = 401;
-    } else if (error.name === 'NotBeforeError') {
-      errorCode = 'TOKEN_NOT_ACTIVE';
-      errorMessage = 'Token no activo aún';
-      statusCode = 401;
-    }
-    
-    logger.error('Error de autenticación JWT', {
+    console.log('❌ [AuthMiddleware] ERROR EN VERIFICACIÓN:', {
+      message: error.message,
+      name: error.name,
+      stack: error.stack?.split('\n')[0]
+    });
+
+    logger.error('Error verificando token', {
       error: error.message,
-      errorName: error.name,
+      tokenPresent: !!token,
       ip: req.ip,
-      url: req.url,
-      userAgent: req.get('User-Agent')
+      url: req.url
     });
     
-    return res.status(statusCode).json({
+    // Determinar el tipo de error JWT
+    if (error.name === 'TokenExpiredError') {
+      console.log('❌ [AuthMiddleware] Token expirado');
+      return res.status(401).json({
+        success: false,
+        message: 'Token expirado',
+        code: ERROR_CODES.TOKEN_EXPIRED
+      });
+    }
+    
+    if (error.name === 'JsonWebTokenError') {
+      console.log('❌ [AuthMiddleware] Token inválido');
+      return res.status(401).json({
+        success: false,
+        message: 'Token inválido',
+        code: ERROR_CODES.TOKEN_INVALID
+      });
+    }
+    
+    console.log('❌ [AuthMiddleware] Error general de autenticación');
+    return res.status(401).json({
       success: false,
-      message: errorMessage,
-      error: {
-        code: errorCode,
-        details: [error.message]
-      }
+      message: 'Error de autenticación',
+      code: ERROR_CODES.AUTH_ERROR
     });
   }
 };
@@ -131,21 +245,28 @@ const authenticateToken = async (req, res, next) => {
  */
 const requireRoles = (allowedRoles) => {
   return (req, res, next) => {
+    console.log('🔐 [RequireRoles] === VERIFICACIÓN DE ROLES ===');
+    console.log('🔐 [RequireRoles] Roles permitidos:', allowedRoles);
+    console.log('🔐 [RequireRoles] Usuario actual:', req.user);
+    
     try {
       if (!req.user) {
+        console.log('❌ [RequireRoles] No hay usuario autenticado');
         return res.status(401).json({
           success: false,
           message: 'Usuario no autenticado',
-          error: {
-            code: 'NOT_AUTHENTICATED',
-            details: ['Debe estar autenticado para acceder a este recurso']
-          }
+          code: 'NOT_AUTHENTICATED'
         });
       }
       
       if (!allowedRoles.includes(req.user.role)) {
+        console.log('❌ [RequireRoles] Rol insuficiente:', {
+          userRole: req.user.role,
+          requiredRoles: allowedRoles
+        });
+        
         logger.warn('Acceso denegado por rol insuficiente', {
-          userId: req.user.id,
+          userId: req.user.user_id,
           userRole: req.user.role,
           requiredRoles: allowedRoles,
           url: req.url,
@@ -155,28 +276,24 @@ const requireRoles = (allowedRoles) => {
         return res.status(403).json({
           success: false,
           message: 'Permisos insuficientes',
-          error: {
-            code: 'INSUFFICIENT_PERMISSIONS',
-            details: [`Rol requerido: ${allowedRoles.join(' o ')}, rol actual: ${req.user.role}`]
-          }
+          code: 'INSUFFICIENT_PERMISSIONS'
         });
       }
       
+      console.log('✅ [RequireRoles] Rol verificado exitosamente');
       next();
     } catch (error) {
+      console.log('❌ [RequireRoles] Error en verificación:', error.message);
       logger.error('Error en verificación de roles', {
         error: error.message,
-        userId: req.user?.id,
+        userId: req.user?.user_id,
         allowedRoles
       });
       
       return res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
-        error: {
-          code: 'ROLE_CHECK_ERROR',
-          details: ['Error verificando permisos de usuario']
-        }
+        code: 'ROLE_CHECK_ERROR'
       });
     }
   };
@@ -197,36 +314,45 @@ const requireManager = requireRoles(['ADMIN', 'MANAGER']);
  * Útil para endpoints que pueden funcionar con o sin autenticación
  */
 const optionalAuth = async (req, res, next) => {
+  console.log('🔓 [OptionalAuth] === AUTENTICACIÓN OPCIONAL ===');
+  
   try {
     let token = null;
     
     // Intentar obtener token
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.substring(7);
-    } else if (req.cookies && req.cookies.accessToken) {
-      token = req.cookies.accessToken;
+    if (req.cookies && req.cookies.access_token) {
+      token = req.cookies.access_token;
+      console.log('🔓 [OptionalAuth] Token encontrado en cookies');
+    } else {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+        console.log('🔓 [OptionalAuth] Token encontrado en header');
+      }
     }
     
     if (token) {
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwtUtils.verifyAccessToken(token);
         req.user = {
-          id: decoded.userId,
+          user_id: decoded.user_id,
           company_id: decoded.company_id,
           role: decoded.role,
           email: decoded.email,
           name: decoded.name
         };
+        console.log('✅ [OptionalAuth] Token válido, usuario autenticado');
       } catch (error) {
-        // Token inválido, pero no fallar
+        console.log('⚠️ [OptionalAuth] Token inválido, continuando sin autenticación');
         logger.debug('Token opcional inválido', { error: error.message });
       }
+    } else {
+      console.log('ℹ️ [OptionalAuth] No token presente, continuando sin autenticación');
     }
     
     next();
   } catch (error) {
-    // No fallar en autenticación opcional
+    console.log('⚠️ [OptionalAuth] Error en autenticación opcional:', error.message);
     logger.debug('Error en autenticación opcional', { error: error.message });
     next();
   }
@@ -234,22 +360,26 @@ const optionalAuth = async (req, res, next) => {
 
 /**
  * Middleware para verificar que el token no esté próximo a expirar
- * Envía header de advertencia si expira en menos de 1 hora
  */
 const checkTokenExpiration = (req, res, next) => {
+  console.log('⏰ [TokenExpiration] === VERIFICACIÓN DE EXPIRACIÓN ===');
+  
   try {
     if (req.user && req.user.tokenExpiresAt) {
       const now = Math.floor(Date.now() / 1000);
       const expiresAt = req.user.tokenExpiresAt;
       const timeUntilExpiration = expiresAt - now;
       
+      console.log('⏰ [TokenExpiration] Token expira en:', timeUntilExpiration, 'segundos');
+      
       // Si expira en menos de 1 hora (3600 segundos)
       if (timeUntilExpiration < 3600) {
         res.set('X-Token-Expires-Soon', 'true');
         res.set('X-Token-Expires-In', timeUntilExpiration.toString());
         
+        console.log('⚠️ [TokenExpiration] Token próximo a expirar');
         logger.info('Token próximo a expirar', {
-          userId: req.user.id,
+          userId: req.user.user_id,
           expiresInSeconds: timeUntilExpiration
         });
       }
@@ -257,7 +387,7 @@ const checkTokenExpiration = (req, res, next) => {
     
     next();
   } catch (error) {
-    // No fallar por este check
+    console.log('⚠️ [TokenExpiration] Error verificando expiración:', error.message);
     logger.debug('Error verificando expiración de token', { error: error.message });
     next();
   }

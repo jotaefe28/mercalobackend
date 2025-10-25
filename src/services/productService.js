@@ -3,68 +3,49 @@
  * Sistema POS Multitenant
  */
 
-const Product = require('../models/Product');
+const Product = require('../models/product.model');
 const { logger } = require('../middlewares/logger');
-const { ERROR_CODES, RESPONSE_MESSAGES, STOCK_STATUS } = require('../utils/constants');
+const { v4: uuidv4 } = require('uuid');
 
 class ProductService {
   /**
-   * Crear nuevo producto
+   * Crear un nuevo producto
+   * @param {Object} productData - Datos del producto
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Producto creado
    */
-  async createProduct(productData, companyId, createdBy) {
+  static async createProduct(productData, companyId) {
     try {
-      logger.info('Creando nuevo producto', {
-        name: productData.name,
-        sku: productData.sku,
-        companyId,
-        createdBy
-      });
-
-      // Verificar que no exista el SKU en la empresa
-      if (productData.sku) {
-        const existingProduct = await Product.findBySku(productData.sku, companyId);
-        if (existingProduct) {
-          throw {
-            code: ERROR_CODES.RESOURCE_ALREADY_EXISTS,
-            message: 'El SKU ya existe'
-          };
+      // Verificar si el SKU ya existe
+      const existingSKU = await Product.skuExists(productData.sku, companyId);
+      if (existingSKU) {
+        throw new Error('Ya existe un producto con este SKU');
+      }
+      
+      // Verificar si el código de barras ya existe (si se proporciona)
+      if (productData.barcode) {
+        const existingBarcode = await Product.barcodeExists(productData.barcode, companyId);
+        if (existingBarcode) {
+          throw new Error('Ya existe un producto con este código de barras');
         }
       }
-
-      // Verificar límites del plan
-      const { canCreate } = await Product.checkPlanLimits(companyId);
-      if (!canCreate) {
-        throw {
-          code: ERROR_CODES.BUSINESS_RULE_VIOLATION,
-          message: 'Se ha alcanzado el límite de productos para su plan'
-        };
-      }
-
-      // Agregar datos adicionales
-      const productWithCompany = {
-        ...productData,
-        company_id: companyId,
-        created_by: createdBy
-      };
-
-      // Crear producto
-      const product = await Product.create(productWithCompany);
-
-      logger.info('Producto creado exitosamente', {
+      
+      // Crear el producto
+      const product = await Product.create(productData, companyId);
+      
+      logger.info('Producto creado exitosamente:', {
         productId: product.id,
-        name: product.name,
         sku: product.sku,
+        name: product.name,
         companyId
       });
-
+      
       return product;
-
     } catch (error) {
-      logger.error('Error creando producto', {
-        name: productData.name,
-        sku: productData.sku,
-        companyId,
-        error: error.message
+      logger.error('Error creando producto:', {
+        error: error.message,
+        productData,
+        companyId
       });
       throw error;
     }
@@ -72,27 +53,26 @@ class ProductService {
 
   /**
    * Obtener producto por ID
+   * @param {string} productId - ID del producto
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Producto encontrado
    */
-  async getProductById(productId, companyId) {
+  static async getProductById(productId, companyId) {
     try {
-      const product = await Product.findByIdAndCompany(productId, companyId);
+      const product = await Product.findById(productId, companyId);
       if (!product) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Producto no encontrado'
-        };
+        throw new Error('Producto no encontrado');
       }
 
       // Agregar estado del stock
-      product.stock_status = this.getStockStatus(product.current_stock, product.min_stock);
+      product.stock_status = this.getStockStatus(product.stock, product.min_stock);
 
       return product;
-
     } catch (error) {
-      logger.error('Error obteniendo producto', {
+      logger.error('Error obteniendo producto por ID:', {
+        error: error.message,
         productId,
-        companyId,
-        error: error.message
+        companyId
       });
       throw error;
     }
@@ -100,93 +80,93 @@ class ProductService {
 
   /**
    * Obtener producto por SKU
+   * @param {string} sku - SKU del producto
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Producto encontrado
    */
-  async getProductBySku(sku, companyId) {
+  static async getProductBySku(sku, companyId) {
     try {
       const product = await Product.findBySku(sku, companyId);
       if (!product) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Producto no encontrado'
-        };
+        throw new Error('Producto no encontrado');
       }
 
       // Agregar estado del stock
-      product.stock_status = this.getStockStatus(product.current_stock, product.min_stock);
+      product.stock_status = this.getStockStatus(product.stock, product.min_stock);
 
       return product;
-
     } catch (error) {
-      logger.error('Error obteniendo producto por SKU', {
+      logger.error('Error obteniendo producto por SKU:', {
+        error: error.message,
         sku,
-        companyId,
-        error: error.message
+        companyId
       });
       throw error;
     }
   }
 
   /**
-   * Listar productos
+   * Obtener lista de productos con filtros y paginación
+   * @param {Object} options - Opciones de filtrado
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Lista de productos paginada
    */
-  async getProducts(companyId, options = {}) {
+  static async getProducts(options, companyId) {
     try {
-      const {
-        page = 1,
-        limit = 20,
-        search = '',
-        category = null,
-        isActive = null,
-        lowStock = false,
-        sortBy = 'name',
-        sortOrder = 'asc'
-      } = options;
-
-      logger.info('Listando productos', {
-        companyId,
-        page,
-        limit,
-        search,
-        category,
-        isActive,
-        lowStock,
-        sortBy,
-        sortOrder
-      });
-
-      const filters = { company_id: companyId };
+      const result = await Product.findAll(companyId, options);
       
-      if (category) filters.category = category;
-      if (isActive !== null) filters.is_active = isActive;
-
-      const result = await Product.findAll(filters, {
-        page,
-        limit,
-        search,
-        searchFields: ['name', 'sku', 'description'],
-        sortBy,
-        sortOrder,
-        lowStock
-      });
-
       // Agregar estado del stock a cada producto
       result.data = result.data.map(product => ({
         ...product,
-        stock_status: this.getStockStatus(product.current_stock, product.min_stock)
+        stock_status: this.getStockStatus(product.stock, product.min_stock)
       }));
 
-      logger.info('Productos listados exitosamente', {
+      logger.info('Productos obtenidos exitosamente:', {
         companyId,
-        total: result.total,
+        total: result.pagination.total,
         returned: result.data.length
       });
 
       return result;
-
     } catch (error) {
-      logger.error('Error listando productos', {
+      logger.error('Error obteniendo lista de productos:', {
+        error: error.message,
+        options,
+        companyId
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Buscar productos
+   * @param {string} term - Término de búsqueda
+   * @param {string} companyId - ID de la empresa
+   * @param {number} limit - Límite de resultados
+   * @returns {Promise<Array>} Lista de productos encontrados
+   */
+  static async searchProducts(term, companyId, limit = 20) {
+    try {
+      const products = await Product.search(companyId, term, limit);
+      
+      // Agregar estado del stock a cada producto
+      const productsWithStatus = products.map(product => ({
+        ...product,
+        stock_status: this.getStockStatus(product.stock, product.min_stock)
+      }));
+
+      logger.info('Búsqueda de productos realizada:', {
         companyId,
-        error: error.message
+        term,
+        found: productsWithStatus.length
+      });
+
+      return productsWithStatus;
+    } catch (error) {
+      logger.error('Error buscando productos:', {
+        error: error.message,
+        term,
+        companyId
       });
       throw error;
     }
@@ -194,188 +174,159 @@ class ProductService {
 
   /**
    * Actualizar producto
+   * @param {string} productId - ID del producto
+   * @param {Object} updateData - Datos a actualizar
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Producto actualizado
    */
-  async updateProduct(productId, updateData, companyId, updatedBy) {
+  static async updateProduct(productId, updateData, companyId) {
     try {
-      logger.info('Actualizando producto', {
-        productId,
-        companyId,
-        updatedBy
-      });
-
       // Verificar que el producto existe
-      const existingProduct = await Product.findByIdAndCompany(productId, companyId);
+      const existingProduct = await Product.findById(productId, companyId);
       if (!existingProduct) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Producto no encontrado'
-        };
+        throw new Error('Producto no encontrado');
       }
 
-      // Si se actualiza el SKU, verificar que no esté en uso
+      // Si se actualiza el SKU, verificar que no esté en uso por otro producto
       if (updateData.sku && updateData.sku !== existingProduct.sku) {
-        const skuInUse = await Product.findBySku(updateData.sku, companyId);
-        if (skuInUse) {
-          throw {
-            code: ERROR_CODES.RESOURCE_ALREADY_EXISTS,
-            message: 'El SKU ya está en uso'
-          };
+        const skuExists = await Product.skuExists(updateData.sku, companyId, productId);
+        if (skuExists) {
+          throw new Error('Ya existe otro producto con este SKU');
         }
       }
-
-      // Preparar datos de actualización
-      const dataToUpdate = {
-        ...updateData,
-        updated_by: updatedBy,
-        updated_at: new Date()
-      };
+      
+      // Si se actualiza el código de barras, verificar que no esté en uso por otro producto
+      if (updateData.barcode && updateData.barcode !== existingProduct.barcode) {
+        const barcodeExists = await Product.barcodeExists(updateData.barcode, companyId, productId);
+        if (barcodeExists) {
+          throw new Error('Ya existe otro producto con este código de barras');
+        }
+      }
 
       // Actualizar producto
-      const updatedProduct = await Product.update(productId, dataToUpdate);
+      const updatedProduct = await Product.update(productId, companyId, updateData);
 
       // Agregar estado del stock
       updatedProduct.stock_status = this.getStockStatus(
-        updatedProduct.current_stock, 
+        updatedProduct.stock, 
         updatedProduct.min_stock
       );
 
-      logger.info('Producto actualizado exitosamente', {
+      logger.info('Producto actualizado exitosamente:', {
         productId,
-        companyId
+        companyId,
+        updateData
       });
 
       return updatedProduct;
-
     } catch (error) {
-      logger.error('Error actualizando producto', {
+      logger.error('Error actualizando producto:', {
+        error: error.message,
         productId,
-        companyId,
-        error: error.message
+        updateData,
+        companyId
       });
       throw error;
     }
   }
 
   /**
-   * Cambiar estado activo/inactivo del producto
+   * Eliminar producto (soft delete)
+   * @param {string} productId - ID del producto
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<boolean>} Resultado de la operación
    */
-  async toggleProductStatus(productId, companyId, updatedBy) {
+  static async deleteProduct(productId, companyId) {
     try {
-      logger.info('Cambiando estado de producto', {
-        productId,
-        companyId,
-        updatedBy
-      });
-
       // Verificar que el producto existe
-      const product = await Product.findByIdAndCompany(productId, companyId);
-      if (!product) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Producto no encontrado'
-        };
+      const existingProduct = await Product.findById(productId, companyId);
+      if (!existingProduct) {
+        throw new Error('Producto no encontrado');
       }
 
-      const newStatus = !product.is_active;
-      const updatedProduct = await Product.update(productId, {
-        is_active: newStatus,
-        updated_by: updatedBy,
-        updated_at: new Date()
-      });
+      // Eliminar producto (soft delete)
+      const result = await Product.delete(productId, companyId);
 
-      // Agregar estado del stock
-      updatedProduct.stock_status = this.getStockStatus(
-        updatedProduct.current_stock, 
-        updatedProduct.min_stock
-      );
-
-      logger.info('Estado de producto cambiado exitosamente', {
+      logger.info('Producto eliminado exitosamente:', {
         productId,
-        newStatus,
         companyId
       });
 
-      return updatedProduct;
-
+      return result;
     } catch (error) {
-      logger.error('Error cambiando estado de producto', {
+      logger.error('Error eliminando producto:', {
+        error: error.message,
         productId,
-        companyId,
-        error: error.message
+        companyId
       });
       throw error;
     }
   }
 
   /**
-   * Actualizar stock del producto
+   * Activar/Desactivar producto
+   * @param {string} productId - ID del producto
+   * @param {boolean} isActive - Estado activo
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Producto actualizado
    */
-  async updateStock(productId, quantity, type, reason, companyId, updatedBy) {
+  static async toggleProductStatus(productId, isActive, companyId) {
     try {
-      logger.info('Actualizando stock de producto', {
+      const updateData = { is_active: isActive };
+      const updatedProduct = await this.updateProduct(productId, updateData, companyId);
+
+      logger.info('Estado de producto actualizado:', {
         productId,
-        quantity,
-        type,
-        reason,
         companyId,
-        updatedBy
-      });
-
-      // Verificar que el producto existe
-      const product = await Product.findByIdAndCompany(productId, companyId);
-      if (!product) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Producto no encontrado'
-        };
-      }
-
-      // Calcular nuevo stock
-      let newStock;
-      if (type === 'IN') {
-        newStock = product.current_stock + quantity;
-      } else if (type === 'OUT') {
-        if (product.current_stock < quantity) {
-          throw {
-            code: ERROR_CODES.INSUFFICIENT_STOCK,
-            message: 'Stock insuficiente'
-          };
-        }
-        newStock = product.current_stock - quantity;
-      } else { // ADJUSTMENT
-        newStock = quantity;
-      }
-
-      // Actualizar stock
-      const updatedProduct = await Product.updateStock(productId, newStock, {
-        quantity,
-        type,
-        reason,
-        updatedBy
-      });
-
-      // Agregar estado del stock
-      updatedProduct.stock_status = this.getStockStatus(
-        updatedProduct.current_stock, 
-        updatedProduct.min_stock
-      );
-
-      logger.info('Stock de producto actualizado exitosamente', {
-        productId,
-        oldStock: product.current_stock,
-        newStock: updatedProduct.current_stock,
-        companyId
+        isActive
       });
 
       return updatedProduct;
-
     } catch (error) {
-      logger.error('Error actualizando stock de producto', {
+      logger.error('Error actualizando estado de producto:', {
+        error: error.message,
         productId,
-        quantity,
-        type,
+        isActive,
+        companyId
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Ajustar stock del producto
+   * @param {string} productId - ID del producto
+   * @param {number} adjustment - Ajuste de stock (positivo o negativo)
+   * @param {string} reason - Razón del ajuste
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Producto actualizado
+   */
+  static async adjustProductStock(productId, adjustment, reason, companyId) {
+    try {
+      const updatedProduct = await Product.adjustStock(productId, companyId, adjustment, reason);
+
+      // Agregar estado del stock
+      updatedProduct.stock_status = this.getStockStatus(
+        updatedProduct.stock, 
+        updatedProduct.min_stock
+      );
+
+      logger.info('Stock de producto ajustado exitosamente:', {
+        productId,
         companyId,
-        error: error.message
+        adjustment,
+        reason,
+        newStock: updatedProduct.stock
+      });
+
+      return updatedProduct;
+    } catch (error) {
+      logger.error('Error ajustando stock de producto:', {
+        error: error.message,
+        productId,
+        adjustment,
+        reason,
+        companyId
       });
       throw error;
     }
@@ -383,111 +334,103 @@ class ProductService {
 
   /**
    * Obtener productos con stock bajo
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Array>} Lista de productos con stock bajo
    */
-  async getLowStockProducts(companyId) {
+  static async getLowStockProducts(companyId) {
     try {
-      logger.info('Obteniendo productos con stock bajo', { companyId });
-
       const lowStockProducts = await Product.getLowStockProducts(companyId);
 
       // Agregar estado del stock
       const productsWithStatus = lowStockProducts.map(product => ({
         ...product,
-        stock_status: this.getStockStatus(product.current_stock, product.min_stock)
+        stock_status: this.getStockStatus(product.stock, product.min_stock)
       }));
 
-      logger.info('Productos con stock bajo obtenidos', {
+      logger.info('Productos con stock bajo obtenidos:', {
         companyId,
         count: productsWithStatus.length
       });
 
       return productsWithStatus;
-
     } catch (error) {
-      logger.error('Error obteniendo productos con stock bajo', {
-        companyId,
-        error: error.message
+      logger.error('Error obteniendo productos con stock bajo:', {
+        error: error.message,
+        companyId
       });
       throw error;
     }
   }
 
   /**
-   * Obtener historial de movimientos de stock
+   * Obtener estadísticas de productos
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Estadísticas de productos
    */
-  async getStockHistory(productId, companyId, options = {}) {
+  static async getProductStats(companyId) {
     try {
-      const {
-        page = 1,
-        limit = 20,
-        dateFrom = null,
-        dateTo = null
-      } = options;
+      const stats = await Product.getStats(companyId);
 
-      logger.info('Obteniendo historial de stock', {
-        productId,
+      logger.info('Estadísticas de productos obtenidas:', {
         companyId,
-        page,
-        limit,
-        dateFrom,
-        dateTo
+        totalProducts: stats.total_products
       });
 
-      // Verificar que el producto existe
-      const product = await Product.findByIdAndCompany(productId, companyId);
-      if (!product) {
-        throw {
-          code: ERROR_CODES.RESOURCE_NOT_FOUND,
-          message: 'Producto no encontrado'
-        };
+      return stats;
+    } catch (error) {
+      logger.error('Error obteniendo estadísticas de productos:', {
+        error: error.message,
+        companyId
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Actualización masiva de precios
+   * @param {Array} products - Lista de productos con nuevos precios
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Resultado de la actualización
+   */
+  static async bulkUpdatePrices(products, companyId) {
+    try {
+      const results = {
+        updated: [],
+        failed: [],
+        total: products.length
+      };
+
+      for (const productUpdate of products) {
+        try {
+          const updatedProduct = await this.updateProduct(
+            productUpdate.id, 
+            { 
+              price: productUpdate.price,
+              cost: productUpdate.cost || undefined
+            }, 
+            companyId
+          );
+          results.updated.push(updatedProduct);
+        } catch (error) {
+          results.failed.push({
+            id: productUpdate.id,
+            error: error.message
+          });
+        }
       }
 
-      const history = await Product.getStockHistory(productId, {
-        page,
-        limit,
-        dateFrom,
-        dateTo
-      });
-
-      logger.info('Historial de stock obtenido', {
-        productId,
+      logger.info('Actualización masiva de precios completada:', {
         companyId,
-        total: history.total,
-        returned: history.data.length
+        total: results.total,
+        updated: results.updated.length,
+        failed: results.failed.length
       });
 
-      return history;
-
+      return results;
     } catch (error) {
-      logger.error('Error obteniendo historial de stock', {
-        productId,
-        companyId,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Obtener categorías de productos
-   */
-  async getCategories(companyId) {
-    try {
-      logger.info('Obteniendo categorías de productos', { companyId });
-
-      const categories = await Product.getCategories(companyId);
-
-      logger.info('Categorías de productos obtenidas', {
-        companyId,
-        count: categories.length
-      });
-
-      return categories;
-
-    } catch (error) {
-      logger.error('Error obteniendo categorías de productos', {
-        companyId,
-        error: error.message
+      logger.error('Error en actualización masiva de precios:', {
+        error: error.message,
+        companyId
       });
       throw error;
     }
@@ -495,26 +438,32 @@ class ProductService {
 
   /**
    * Determinar estado del stock
+   * @param {number} currentStock - Stock actual
+   * @param {number} minStock - Stock mínimo
+   * @returns {string} Estado del stock
    */
-  getStockStatus(currentStock, minStock) {
+  static getStockStatus(currentStock, minStock) {
     if (currentStock <= 0) {
-      return STOCK_STATUS.OUT_OF_STOCK;
+      return 'out_of_stock';
     } else if (currentStock <= minStock) {
-      return STOCK_STATUS.LOW_STOCK;
+      return 'low_stock';
     } else {
-      return STOCK_STATUS.IN_STOCK;
+      return 'in_stock';
     }
   }
 
   /**
    * Validar disponibilidad de productos para venta
+   * @param {Array} products - Lista de productos a validar
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Array>} Resultados de la validación
    */
-  async validateProductsAvailability(products, companyId) {
+  static async validateProductsAvailability(products, companyId) {
     try {
       const validationResults = [];
 
       for (const item of products) {
-        const product = await Product.findByIdAndCompany(item.product_id, companyId);
+        const product = await Product.findById(item.product_id, companyId);
         
         if (!product) {
           validationResults.push({
@@ -534,12 +483,12 @@ class ProductService {
           continue;
         }
 
-        if (product.current_stock < item.quantity) {
+        if (product.stock < item.quantity) {
           validationResults.push({
             product_id: item.product_id,
             valid: false,
             error: 'Stock insuficiente',
-            available_stock: product.current_stock,
+            available_stock: product.stock,
             requested_quantity: item.quantity
           });
           continue;
@@ -552,21 +501,250 @@ class ProductService {
             id: product.id,
             name: product.name,
             price: product.price,
-            current_stock: product.current_stock
+            stock: product.stock
           }
         });
       }
 
       return validationResults;
-
     } catch (error) {
-      logger.error('Error validando disponibilidad de productos', {
+      logger.error('Error validando disponibilidad de productos:', {
+        error: error.message,
+        companyId
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtener producto por código de barras
+   * @param {string} barcode - Código de barras del producto
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Producto encontrado
+   */
+  static async getProductByBarcode(barcode, companyId) {
+    try {
+      const product = await Product.findByBarcode(barcode, companyId);
+      if (!product) {
+        throw new Error('Producto no encontrado');
+      }
+
+      // Agregar estado del stock
+      product.stock_status = this.getStockStatus(product.stock, product.min_stock);
+
+      return product;
+    } catch (error) {
+      logger.error('Error obteniendo producto por código de barras:', {
+        error: error.message,
+        barcode,
+        companyId
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Actualización masiva de precios optimizada
+   * @param {Array} products - Lista de productos con nuevos precios
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Object>} Resultado de la actualización
+   */
+  static async bulkUpdatePricesOptimized(products, companyId) {
+    try {
+      const updatedProducts = await Product.updateBulkPrices(companyId, products);
+      
+      logger.info('Actualización masiva de precios completada:', {
         companyId,
-        error: error.message
+        total: products.length,
+        updated: updatedProducts.length
+      });
+
+      return {
+        updated: updatedProducts,
+        total: products.length,
+        success: true
+      };
+    } catch (error) {
+      logger.error('Error en actualización masiva de precios:', {
+        error: error.message,
+        companyId
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtener lista de reabastecimiento
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Array>} Lista de productos para reabastecer
+   */
+  static async getReorderList(companyId) {
+    try {
+      const reorderList = await Product.getReorderList(companyId);
+      
+      logger.info('Lista de reabastecimiento obtenida:', {
+        companyId,
+        count: reorderList.length
+      });
+
+      return reorderList;
+    } catch (error) {
+      logger.error('Error obteniendo lista de reabastecimiento:', {
+        error: error.message,
+        companyId
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtener productos por proveedor
+   * @param {string} supplierId - ID del proveedor
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Array>} Lista de productos del proveedor
+   */
+  static async getProductsBySupplier(supplierId, companyId) {
+    try {
+      const products = await Product.findBySupplier(companyId, supplierId);
+      
+      logger.info('Productos por proveedor obtenidos:', {
+        companyId,
+        supplierId,
+        count: products.length
+      });
+
+      return products;
+    } catch (error) {
+      logger.error('Error obteniendo productos por proveedor:', {
+        error: error.message,
+        supplierId,
+        companyId
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtener productos próximos a vencer
+   * @param {string} companyId - ID de la empresa
+   * @param {number} days - Días de anticipación (default: 30)
+   * @returns {Promise<Array>} Lista de productos próximos a vencer
+   */
+  static async getExpiringProducts(companyId, days = 30) {
+    try {
+      const options = {
+        expiring_soon: true,
+        is_active: true,
+        sort_by: 'expiry_date',
+        sort_order: 'ASC',
+        limit: 100
+      };
+      
+      const result = await Product.findAll(companyId, options);
+      
+      logger.info('Productos próximos a vencer obtenidos:', {
+        companyId,
+        days,
+        count: result.data.length
+      });
+
+      return result.data;
+    } catch (error) {
+      logger.error('Error obteniendo productos próximos a vencer:', {
+        error: error.message,
+        companyId,
+        days
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtener productos con descuento
+   * @param {string} companyId - ID de la empresa
+   * @returns {Promise<Array>} Lista de productos con descuento
+   */
+  static async getDiscountedProducts(companyId) {
+    try {
+      const options = {
+        has_discount: true,
+        is_active: true,
+        sort_by: 'discount_price',
+        sort_order: 'ASC',
+        limit: 100
+      };
+      
+      const result = await Product.findAll(companyId, options);
+      
+      logger.info('Productos con descuento obtenidos:', {
+        companyId,
+        count: result.data.length
+      });
+
+      return result.data;
+    } catch (error) {
+      logger.error('Error obteniendo productos con descuento:', {
+        error: error.message,
+        companyId
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Duplicar producto
+   * @param {string} productId - ID del producto a duplicar
+   * @param {string} companyId - ID de la empresa
+   * @param {Object} overrides - Campos a sobrescribir en el duplicado
+   * @returns {Promise<Object>} Producto duplicado
+   */
+  static async duplicateProduct(productId, companyId, overrides = {}) {
+    try {
+      const originalProduct = await Product.findById(productId, companyId);
+      if (!originalProduct) {
+        throw new Error('Producto original no encontrado');
+      }
+
+      // Crear nuevo SKU único
+      const newSku = overrides.sku || `${originalProduct.sku}-COPY`;
+      
+      // Verificar que el nuevo SKU no exista
+      const skuExists = await Product.skuExists(newSku, companyId);
+      if (skuExists) {
+        throw new Error('El SKU para el producto duplicado ya existe');
+      }
+
+      // Preparar datos del nuevo producto
+      const productData = {
+        ...originalProduct,
+        id: undefined,
+        sku: newSku,
+        name: overrides.name || `${originalProduct.name} - Copia`,
+        stock: overrides.stock || 0,
+        barcode: overrides.barcode || null, // Limpiar código de barras para evitar duplicados
+        created_at: undefined,
+        updated_at: undefined,
+        ...overrides
+      };
+
+      const duplicatedProduct = await Product.create(productData, companyId);
+      
+      logger.info('Producto duplicado exitosamente:', {
+        originalId: productId,
+        duplicatedId: duplicatedProduct.id,
+        companyId
+      });
+
+      return duplicatedProduct;
+    } catch (error) {
+      logger.error('Error duplicando producto:', {
+        error: error.message,
+        productId,
+        companyId
       });
       throw error;
     }
   }
 }
 
-module.exports = new ProductService();
+module.exports = ProductService;

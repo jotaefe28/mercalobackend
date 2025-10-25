@@ -386,5 +386,8 @@ module.exports = {
   criticalWriteRateLimit,
   dynamicRateLimit,
   rateLimitLogger,
-  webhookRateLimit
+  webhookRateLimit,
+  // Rate limiters específicos para productos
+  createRateLimit: criticalWriteRateLimit,
+  bulkUpdateRateLimit: adminRateLimit
 };

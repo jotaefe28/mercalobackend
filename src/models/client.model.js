@@ -23,20 +23,28 @@ class ClientModel {
       
       const query = `
         INSERT INTO clients (
-          id, company_id, name, document, phone, email, 
-          address, current_points, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, company_id, document_type, document_number, name, last_name,
+          email, phone, address, city, department, birth_date, 
+          current_points, total_purchases, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       
       const params = [
         id,
         companyId,
+        clientData.document_type,
+        clientData.document_number,
         clientData.name,
-        clientData.document,
-        clientData.phone,
+        clientData.last_name || null,
         clientData.email || null,
+        clientData.phone || null,
         clientData.address || null,
+        clientData.city || null,
+        clientData.department || null,
+        clientData.birth_date || null,
         0, // Puntos iniciales
+        0, // Total compras inicial
+        true, // Activo por defecto
         now,
         now
       ];
@@ -67,16 +75,23 @@ class ClientModel {
         SELECT 
           id,
           company_id,
+          document_type,
+          document_number,
           name,
-          document,
-          phone,
+          last_name,
           email,
+          phone,
           address,
+          city,
+          department,
+          birth_date,
           current_points,
+          total_purchases,
+          is_active,
           created_at,
           updated_at
         FROM clients 
-        WHERE id = ?
+        WHERE id = ? AND is_active = true
       `;
       
       let params = [id];
@@ -102,29 +117,36 @@ class ClientModel {
   
   /**
    * Buscar cliente por documento
-   * @param {string} document - Documento del cliente
+   * @param {string} documentNumber - Número de documento del cliente
    * @param {string} companyId - ID de la empresa
    * @returns {Promise<Object|null>} Cliente encontrado o null
    */
-  static async findByDocument(document, companyId) {
+  static async findByDocument(documentNumber, companyId) {
     try {
       let query = `
         SELECT 
           id,
           company_id,
+          document_type,
+          document_number,
           name,
-          document,
-          phone,
+          last_name,
           email,
+          phone,
           address,
+          city,
+          department,
+          birth_date,
           current_points,
+          total_purchases,
+          is_active,
           created_at,
           updated_at
         FROM clients 
-        WHERE document = ?
+        WHERE document_number = ? AND is_active = true
       `;
       
-      let params = [document];
+      let params = [documentNumber];
       
       // Agregar filtro de tenant
       if (companyId) {
@@ -138,7 +160,7 @@ class ClientModel {
     } catch (error) {
       logger.error('Error buscando cliente por documento:', {
         error: error.message,
-        document,
+        documentNumber,
         companyId
       });
       throw error;
@@ -157,16 +179,23 @@ class ClientModel {
         SELECT 
           id,
           company_id,
+          document_type,
+          document_number,
           name,
-          document,
-          phone,
+          last_name,
           email,
+          phone,
           address,
+          city,
+          department,
+          birth_date,
           current_points,
+          total_purchases,
+          is_active,
           created_at,
           updated_at
         FROM clients 
-        WHERE phone = ?
+        WHERE phone = ? AND is_active = true
       `;
       
       let params = [phone];
@@ -202,16 +231,23 @@ class ClientModel {
         SELECT 
           id,
           company_id,
+          document_type,
+          document_number,
           name,
-          document,
-          phone,
+          last_name,
           email,
+          phone,
           address,
+          city,
+          department,
+          birth_date,
           current_points,
+          total_purchases,
+          is_active,
           created_at,
           updated_at
         FROM clients 
-        WHERE (document = ? OR phone = ?)
+        WHERE (document_number = ? OR phone = ?) AND is_active = true
       `;
       
       let params = [identifier, identifier];
@@ -247,8 +283,11 @@ class ClientModel {
         page = 1,
         limit = 20,
         sortBy = 'created_at',
-        sortOrder = 'desc',
+        sortOrder = 'DESC',
         search = null,
+        document_type = null,
+        is_active = true,
+        city = null,
         hasPoints = null
       } = options;
       
@@ -256,10 +295,35 @@ class ClientModel {
       let whereConditions = ['company_id = ?'];
       let params = [companyId];
       
+      // Filtro de activos
+      if (is_active !== undefined) {
+        whereConditions.push('is_active = ?');
+        params.push(is_active);
+      }
+      
+      // Filtro por tipo de documento
+      if (document_type) {
+        whereConditions.push('document_type = ?');
+        params.push(document_type);
+      }
+      
+      // Filtro por ciudad
+      if (city) {
+        whereConditions.push('city LIKE ?');
+        params.push(`%${city}%`);
+      }
+      
       // Filtros adicionales
       if (search) {
-        whereConditions.push('(name LIKE ? OR document LIKE ? OR phone LIKE ? OR email LIKE ?)');
-        params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+        whereConditions.push(`(
+          name LIKE ? OR 
+          last_name LIKE ? OR 
+          document_number LIKE ? OR 
+          phone LIKE ? OR 
+          email LIKE ?
+        )`);
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
       }
       
       if (hasPoints !== null) {
@@ -282,12 +346,19 @@ class ClientModel {
         SELECT 
           id,
           company_id,
+          document_type,
+          document_number,
           name,
-          document,
-          phone,
+          last_name,
           email,
+          phone,
           address,
+          city,
+          department,
+          birth_date,
           current_points,
+          total_purchases,
+          is_active,
           created_at,
           updated_at
         FROM clients 
@@ -296,16 +367,18 @@ class ClientModel {
         LIMIT ? OFFSET ?
       `;
       
-      params.push(limit, offset);
+      params.push(parseInt(limit), parseInt(offset));
       const clients = await executeQuery(query, params, 'Listar clientes');
       
       return {
-        data: clients,
+        clients,
         pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
+          current_page: parseInt(page),
+          per_page: parseInt(limit),
+          total: total,
+          total_pages: Math.ceil(total / limit),
+          from: offset + 1,
+          to: Math.min(offset + limit, total),
           hasNext: page < Math.ceil(total / limit),
           hasPrev: page > 1
         }
@@ -333,28 +406,37 @@ class ClientModel {
         SELECT 
           id,
           company_id,
+          document_type,
+          document_number,
           name,
-          document,
-          phone,
+          last_name,
           email,
+          phone,
           address,
+          city,
+          department,
+          birth_date,
           current_points,
+          total_purchases,
+          is_active,
           created_at,
           updated_at
         FROM clients 
         WHERE company_id = ? 
+          AND is_active = true
           AND (
             name LIKE ? OR 
-            document LIKE ? OR 
+            last_name LIKE ? OR
+            document_number LIKE ? OR 
             phone LIKE ? OR
             email LIKE ?
           )
         ORDER BY 
           CASE 
             WHEN name LIKE ? THEN 1
-            WHEN document = ? THEN 2
+            WHEN document_number = ? THEN 2
             WHEN phone = ? THEN 3
-            WHEN document LIKE ? THEN 4
+            WHEN document_number LIKE ? THEN 4
             WHEN phone LIKE ? THEN 5
             ELSE 6
           END,
@@ -367,6 +449,7 @@ class ClientModel {
       
       const params = [
         companyId,
+        searchTerm,
         searchTerm,
         searchTerm,
         searchTerm,
@@ -404,19 +487,22 @@ class ClientModel {
         SELECT 
           id,
           name,
-          document,
+          last_name,
+          document_number,
           phone,
           current_points
         FROM clients 
         WHERE company_id = ? 
+          AND is_active = true
           AND (
             name LIKE ? OR 
-            document LIKE ? OR 
+            last_name LIKE ? OR
+            document_number LIKE ? OR 
             phone LIKE ?
           )
         ORDER BY 
           CASE 
-            WHEN document = ? THEN 1
+            WHEN document_number = ? THEN 1
             WHEN phone = ? THEN 2
             WHEN name LIKE ? THEN 3
             ELSE 4
@@ -430,6 +516,7 @@ class ClientModel {
       
       const params = [
         companyId,
+        searchTerm,
         searchTerm,
         searchTerm,
         searchTerm,
@@ -460,13 +547,17 @@ class ClientModel {
    */
   static async update(id, companyId, updateData) {
     try {
-      const allowedFields = ['name', 'document', 'phone', 'email', 'address'];
+      const allowedFields = [
+        'document_type', 'document_number', 'name', 'last_name',
+        'email', 'phone', 'address', 'city', 'department', 
+        'birth_date', 'is_active'
+      ];
       const updateFields = [];
       const params = [];
       
       // Construir query de actualización dinámicamente
       Object.keys(updateData).forEach(key => {
-        if (allowedFields.includes(key)) {
+        if (allowedFields.includes(key) && updateData[key] !== undefined) {
           updateFields.push(`${key} = ?`);
           params.push(updateData[key]);
         }
@@ -509,7 +600,7 @@ class ClientModel {
   }
   
   /**
-   * Eliminar cliente
+   * Eliminar cliente (soft delete)
    * @param {string} id - ID del cliente
    * @param {string} companyId - ID de la empresa
    * @returns {Promise<boolean>} True si se eliminó correctamente
@@ -517,7 +608,8 @@ class ClientModel {
   static async delete(id, companyId) {
     try {
       const query = `
-        DELETE FROM clients 
+        UPDATE clients 
+        SET is_active = false, updated_at = NOW()
         WHERE id = ? AND company_id = ?
       `;
       
@@ -609,21 +701,54 @@ class ClientModel {
   }
   
   /**
+   * Actualizar total de compras del cliente
+   * @param {string} id - ID del cliente
+   * @param {string} companyId - ID de la empresa
+   * @param {number} amount - Monto a agregar
+   * @returns {Promise<Object>} Cliente actualizado
+   */
+  static async updateTotalPurchases(id, companyId, amount) {
+    try {
+      const query = `
+        UPDATE clients 
+        SET total_purchases = total_purchases + ?, updated_at = NOW()
+        WHERE id = ? AND company_id = ?
+      `;
+
+      const result = await executeQuery(query, [amount, id, companyId], 'Actualizar total compras cliente');
+
+      if (result.affectedRows === 0) {
+        throw new Error('Cliente no encontrado o no pertenece a la empresa');
+      }
+
+      return await this.findById(id, companyId);
+    } catch (error) {
+      logger.error('Error actualizando total de compras del cliente:', {
+        error: error.message,
+        id,
+        amount,
+        companyId
+      });
+      throw error;
+    }
+  }
+  
+  /**
    * Verificar si documento ya existe en la empresa
-   * @param {string} document - Documento a verificar
+   * @param {string} documentNumber - Documento a verificar
    * @param {string} companyId - ID de la empresa
    * @param {string} excludeClientId - ID de cliente a excluir (para updates)
    * @returns {Promise<boolean>} True si el documento ya existe
    */
-  static async documentExists(document, companyId, excludeClientId = null) {
+  static async documentExists(documentNumber, companyId, excludeClientId = null) {
     try {
       let query = `
         SELECT COUNT(*) as count 
         FROM clients 
-        WHERE document = ? AND company_id = ?
+        WHERE document_number = ? AND company_id = ? AND is_active = true
       `;
       
-      let params = [document, companyId];
+      let params = [documentNumber, companyId];
       
       if (excludeClientId) {
         query += ' AND id != ?';
@@ -635,7 +760,7 @@ class ClientModel {
     } catch (error) {
       logger.error('Error verificando existencia de documento:', {
         error: error.message,
-        document,
+        documentNumber,
         companyId,
         excludeClientId
       });
@@ -653,9 +778,13 @@ class ClientModel {
       const query = `
         SELECT 
           COUNT(*) as total_clients,
+          COUNT(CASE WHEN is_active = true THEN 1 END) as active_clients,
+          COUNT(CASE WHEN is_active = false THEN 1 END) as inactive_clients,
           COUNT(CASE WHEN current_points > 0 THEN 1 END) as clients_with_points,
           COALESCE(SUM(current_points), 0) as total_points_outstanding,
+          COALESCE(SUM(total_purchases), 0) as total_sales_to_customers,
           COALESCE(AVG(current_points), 0) as average_points_per_client,
+          COALESCE(AVG(total_purchases), 0) as avg_purchase_per_customer,
           COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 END) as new_clients_last_30_days
         FROM clients 
         WHERE company_id = ?

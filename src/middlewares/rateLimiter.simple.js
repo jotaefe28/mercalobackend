@@ -72,6 +72,11 @@ const authRateLimit = rateLimit({
   handler: rateLimitHandler('auth')
 });
 
+console.log('🔧 [Rate Limiting] Auth rate limit configurado:', {
+  window: AUTH_RATE_LIMIT_WINDOW / 1000 / 60 + ' minutos',
+  max: AUTH_RATE_LIMIT_MAX + ' requests'
+});
+
 /**
  * Rate Limiting para registro
  * Previene creación masiva de cuentas

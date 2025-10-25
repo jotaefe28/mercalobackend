@@ -3,10 +3,8 @@
  * Sistema POS Multitenant
  */
 
-const productService = require('../services/productService');
-const { validationResult } = require('express-validator');
+const ProductService = require('../services/productService');
 const { logger } = require('../middlewares/logger');
-const { ERROR_CODES, RESPONSE_MESSAGES } = require('../utils/constants');
 
 class ProductController {
   /**
@@ -14,46 +12,36 @@ class ProductController {
    */
   async createProduct(req, res, next) {
     try {
-      // Validar entrada
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: errors.array()
-        });
-      }
-
       const productData = req.body;
       const companyId = req.user.companyId;
-      const createdBy = req.user.userId;
 
-      logger.info('Creando producto', {
+      logger.info('Creando producto:', {
         name: productData.name,
         sku: productData.sku,
-        companyId,
-        createdBy
+        companyId
       });
 
-      const product = await productService.createProduct(productData, companyId, createdBy);
-
-      logger.info('Producto creado exitosamente', {
-        productId: product.id,
-        name: product.name,
-        sku: product.sku
-      });
+      const product = await ProductService.createProduct(productData, companyId);
 
       res.status(201).json({
         success: true,
-        message: RESPONSE_MESSAGES.CREATED,
+        message: 'Producto creado exitosamente',
         data: product
       });
 
     } catch (error) {
-      logger.error('Error creando producto', {
+      logger.error('Error creando producto:', {
         error: error.message,
         companyId: req.user?.companyId
       });
+      
+      if (error.message.includes('Ya existe')) {
+        return res.status(409).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
       next(error);
     }
   }
@@ -63,10 +51,10 @@ class ProductController {
    */
   async getProductById(req, res, next) {
     try {
-      const { productId } = req.params;
+      const { id } = req.params;
       const companyId = req.user.companyId;
 
-      const product = await productService.getProductById(productId, companyId);
+      const product = await ProductService.getProductById(id, companyId);
 
       res.json({
         success: true,
@@ -74,11 +62,19 @@ class ProductController {
       });
 
     } catch (error) {
-      logger.error('Error obteniendo producto', {
-        productId: req.params.productId,
+      logger.error('Error obteniendo producto:', {
+        productId: req.params.id,
         companyId: req.user?.companyId,
         error: error.message
       });
+      
+      if (error.message === 'Producto no encontrado') {
+        return res.status(404).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
       next(error);
     }
   }
@@ -91,7 +87,7 @@ class ProductController {
       const { sku } = req.params;
       const companyId = req.user.companyId;
 
-      const product = await productService.getProductBySku(sku, companyId);
+      const product = await ProductService.getProductBySku(sku, companyId);
 
       res.json({
         success: true,
@@ -99,8 +95,76 @@ class ProductController {
       });
 
     } catch (error) {
-      logger.error('Error obteniendo producto por SKU', {
+      logger.error('Error obteniendo producto por SKU:', {
         sku: req.params.sku,
+        companyId: req.user?.companyId,
+        error: error.message
+      });
+      
+      if (error.message === 'Producto no encontrado') {
+        return res.status(404).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
+      next(error);
+    }
+  }
+
+  /**
+   * Obtener producto por código de barras
+   */
+  async getProductByBarcode(req, res, next) {
+    try {
+      const { barcode } = req.params;
+      const companyId = req.user.companyId;
+
+      const product = await ProductService.getProductByBarcode(barcode, companyId);
+
+      res.json({
+        success: true,
+        data: product
+      });
+
+    } catch (error) {
+      logger.error('Error obteniendo producto por código de barras:', {
+        barcode: req.params.barcode,
+        companyId: req.user?.companyId,
+        error: error.message
+      });
+      
+      if (error.message === 'Producto no encontrado') {
+        return res.status(404).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
+      next(error);
+    }
+  }
+
+  /**
+   * Listar productos con filtros y paginación
+   */
+  async getProducts(req, res, next) {
+    try {
+      const companyId = req.user.companyId;
+      const options = req.query;
+
+      logger.info('Listando productos:', { companyId, options });
+
+      const result = await ProductService.getProducts(options, companyId);
+
+      res.json({
+        success: true,
+        data: result.data,
+        pagination: result.pagination
+      });
+
+    } catch (error) {
+      logger.error('Error listando productos:', {
         companyId: req.user?.companyId,
         error: error.message
       });
@@ -109,42 +173,30 @@ class ProductController {
   }
 
   /**
-   * Listar productos
+   * Buscar productos
    */
-  async getProducts(req, res, next) {
+  async searchProducts(req, res, next) {
     try {
+      const { search } = req.query;
       const companyId = req.user.companyId;
-      const options = {
-        page: parseInt(req.query.page) || 1,
-        limit: parseInt(req.query.limit) || 20,
-        search: req.query.search || '',
-        category: req.query.category || null,
-        isActive: req.query.isActive !== undefined ? req.query.isActive === 'true' : null,
-        lowStock: req.query.lowStock === 'true',
-        sortBy: req.query.sortBy || 'name',
-        sortOrder: req.query.sortOrder || 'asc'
-      };
+      const limit = parseInt(req.query.limit) || 20;
 
-      logger.info('Listando productos', {
-        companyId,
-        options
-      });
+      if (!search || search.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Término de búsqueda requerido'
+        });
+      }
 
-      const result = await productService.getProducts(companyId, options);
+      const products = await ProductService.searchProducts(search.trim(), companyId, limit);
 
       res.json({
         success: true,
-        data: result.data,
-        pagination: {
-          page: options.page,
-          limit: options.limit,
-          total: result.total,
-          pages: Math.ceil(result.total / options.limit)
-        }
+        data: products
       });
 
     } catch (error) {
-      logger.error('Error listando productos', {
+      logger.error('Error buscando productos:', {
         companyId: req.user?.companyId,
         error: error.message
       });
@@ -157,140 +209,182 @@ class ProductController {
    */
   async updateProduct(req, res, next) {
     try {
-      // Validar entrada
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: errors.array()
-        });
-      }
-
-      const { productId } = req.params;
+      const { id } = req.params;
       const updateData = req.body;
       const companyId = req.user.companyId;
-      const updatedBy = req.user.userId;
 
-      logger.info('Actualizando producto', {
-        productId,
-        companyId,
-        updatedBy
-      });
+      logger.info('Actualizando producto:', { productId: id, companyId });
 
-      const product = await productService.updateProduct(productId, updateData, companyId, updatedBy);
-
-      logger.info('Producto actualizado exitosamente', {
-        productId,
-        companyId
-      });
+      const product = await ProductService.updateProduct(id, updateData, companyId);
 
       res.json({
         success: true,
-        message: RESPONSE_MESSAGES.UPDATED,
+        message: 'Producto actualizado exitosamente',
         data: product
       });
 
     } catch (error) {
-      logger.error('Error actualizando producto', {
-        productId: req.params.productId,
+      logger.error('Error actualizando producto:', {
+        productId: req.params.id,
         companyId: req.user?.companyId,
         error: error.message
       });
+      
+      if (error.message === 'Producto no encontrado') {
+        return res.status(404).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
+      if (error.message.includes('Ya existe')) {
+        return res.status(409).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
       next(error);
     }
   }
 
   /**
-   * Cambiar estado del producto
+   * Eliminar producto (soft delete)
+   */
+  async deleteProduct(req, res, next) {
+    try {
+      const { id } = req.params;
+      const companyId = req.user.companyId;
+
+      logger.info('Eliminando producto:', { productId: id, companyId });
+
+      await ProductService.deleteProduct(id, companyId);
+
+      res.json({
+        success: true,
+        message: 'Producto eliminado exitosamente'
+      });
+
+    } catch (error) {
+      logger.error('Error eliminando producto:', {
+        productId: req.params.id,
+        companyId: req.user?.companyId,
+        error: error.message
+      });
+      
+      if (error.message === 'Producto no encontrado') {
+        return res.status(404).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
+      next(error);
+    }
+  }
+
+  /**
+   * Activar/Desactivar producto
    */
   async toggleProductStatus(req, res, next) {
     try {
-      const { productId } = req.params;
+      const { id } = req.params;
+      const { is_active } = req.body;
       const companyId = req.user.companyId;
-      const updatedBy = req.user.userId;
 
-      logger.info('Cambiando estado de producto', {
-        productId,
-        companyId,
-        updatedBy
-      });
+      if (typeof is_active !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'El campo is_active debe ser true o false'
+        });
+      }
 
-      const product = await productService.toggleProductStatus(productId, companyId, updatedBy);
-
-      logger.info('Estado de producto cambiado', {
-        productId,
-        newStatus: product.is_active
-      });
+      const product = await ProductService.toggleProductStatus(id, is_active, companyId);
 
       res.json({
         success: true,
-        message: RESPONSE_MESSAGES.UPDATED,
+        message: `Producto ${is_active ? 'activado' : 'desactivado'} exitosamente`,
         data: product
       });
 
     } catch (error) {
-      logger.error('Error cambiando estado de producto', {
-        productId: req.params.productId,
+      logger.error('Error cambiando estado de producto:', {
+        productId: req.params.id,
         companyId: req.user?.companyId,
         error: error.message
       });
+      
+      if (error.message === 'Producto no encontrado') {
+        return res.status(404).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
       next(error);
     }
   }
 
   /**
-   * Actualizar stock del producto
+   * Ajustar stock del producto
    */
-  async updateStock(req, res, next) {
+  async adjustStock(req, res, next) {
     try {
-      // Validar entrada
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: errors.array()
-        });
-      }
-
-      const { productId } = req.params;
-      const { quantity, type, reason } = req.body;
+      const { id } = req.params;
+      const { adjustment, reason } = req.body;
       const companyId = req.user.companyId;
-      const updatedBy = req.user.userId;
 
-      logger.info('Actualizando stock de producto', {
-        productId,
-        quantity,
-        type,
-        reason,
-        companyId,
-        updatedBy
-      });
-
-      const product = await productService.updateStock(
-        productId, 
-        quantity, 
-        type, 
-        reason, 
-        companyId, 
-        updatedBy
-      );
-
-      logger.info('Stock de producto actualizado', {
-        productId,
-        newStock: product.current_stock
-      });
+      const product = await ProductService.adjustProductStock(id, adjustment, reason, companyId);
 
       res.json({
         success: true,
-        message: RESPONSE_MESSAGES.UPDATED,
+        message: 'Stock ajustado exitosamente',
         data: product
       });
 
     } catch (error) {
-      logger.error('Error actualizando stock de producto', {
-        productId: req.params.productId,
+      logger.error('Error ajustando stock:', {
+        productId: req.params.id,
+        companyId: req.user?.companyId,
+        error: error.message
+      });
+      
+      if (error.message === 'Producto no encontrado') {
+        return res.status(404).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
+      if (error.message.includes('stock negativo')) {
+        return res.status(400).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
+      next(error);
+    }
+  }
+
+  /**
+   * Actualización masiva de precios
+   */
+  async bulkUpdatePrices(req, res, next) {
+    try {
+      const { products } = req.body;
+      const companyId = req.user.companyId;
+
+      const result = await ProductService.bulkUpdatePricesOptimized(products, companyId);
+
+      res.json({
+        success: true,
+        message: 'Precios actualizados exitosamente',
+        data: result
+      });
+
+    } catch (error) {
+      logger.error('Error en actualización masiva de precios:', {
         companyId: req.user?.companyId,
         error: error.message
       });
@@ -305,9 +399,7 @@ class ProductController {
     try {
       const companyId = req.user.companyId;
 
-      logger.info('Obteniendo productos con stock bajo', { companyId });
-
-      const products = await productService.getLowStockProducts(companyId);
+      const products = await ProductService.getLowStockProducts(companyId);
 
       res.json({
         success: true,
@@ -315,7 +407,7 @@ class ProductController {
       });
 
     } catch (error) {
-      logger.error('Error obteniendo productos con stock bajo', {
+      logger.error('Error obteniendo productos con stock bajo:', {
         companyId: req.user?.companyId,
         error: error.message
       });
@@ -324,66 +416,21 @@ class ProductController {
   }
 
   /**
-   * Obtener historial de movimientos de stock
+   * Obtener estadísticas de productos
    */
-  async getStockHistory(req, res, next) {
-    try {
-      const { productId } = req.params;
-      const companyId = req.user.companyId;
-      const options = {
-        page: parseInt(req.query.page) || 1,
-        limit: parseInt(req.query.limit) || 20,
-        dateFrom: req.query.dateFrom || null,
-        dateTo: req.query.dateTo || null
-      };
-
-      logger.info('Obteniendo historial de stock', {
-        productId,
-        companyId,
-        options
-      });
-
-      const result = await productService.getStockHistory(productId, companyId, options);
-
-      res.json({
-        success: true,
-        data: result.data,
-        pagination: {
-          page: options.page,
-          limit: options.limit,
-          total: result.total,
-          pages: Math.ceil(result.total / options.limit)
-        }
-      });
-
-    } catch (error) {
-      logger.error('Error obteniendo historial de stock', {
-        productId: req.params.productId,
-        companyId: req.user?.companyId,
-        error: error.message
-      });
-      next(error);
-    }
-  }
-
-  /**
-   * Obtener categorías de productos
-   */
-  async getCategories(req, res, next) {
+  async getProductStats(req, res, next) {
     try {
       const companyId = req.user.companyId;
 
-      logger.info('Obteniendo categorías de productos', { companyId });
-
-      const categories = await productService.getCategories(companyId);
+      const stats = await ProductService.getProductStats(companyId);
 
       res.json({
         success: true,
-        data: categories
+        data: stats
       });
 
     } catch (error) {
-      logger.error('Error obteniendo categorías de productos', {
+      logger.error('Error obteniendo estadísticas de productos:', {
         companyId: req.user?.companyId,
         error: error.message
       });
@@ -392,29 +439,158 @@ class ProductController {
   }
 
   /**
-   * Validar disponibilidad de productos para venta
+   * Obtener lista de reabastecimiento
+   */
+  async getReorderList(req, res, next) {
+    try {
+      const companyId = req.user.companyId;
+
+      const reorderList = await ProductService.getReorderList(companyId);
+
+      res.json({
+        success: true,
+        data: reorderList
+      });
+
+    } catch (error) {
+      logger.error('Error obteniendo lista de reabastecimiento:', {
+        companyId: req.user?.companyId,
+        error: error.message
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Obtener productos por proveedor
+   */
+  async getProductsBySupplier(req, res, next) {
+    try {
+      const { supplierId } = req.params;
+      const companyId = req.user.companyId;
+
+      const products = await ProductService.getProductsBySupplier(supplierId, companyId);
+
+      res.json({
+        success: true,
+        data: products
+      });
+
+    } catch (error) {
+      logger.error('Error obteniendo productos por proveedor:', {
+        supplierId: req.params.supplierId,
+        companyId: req.user?.companyId,
+        error: error.message
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Obtener productos próximos a vencer
+   */
+  async getExpiringProducts(req, res, next) {
+    try {
+      const companyId = req.user.companyId;
+      const days = parseInt(req.query.days) || 30;
+
+      const products = await ProductService.getExpiringProducts(companyId, days);
+
+      res.json({
+        success: true,
+        data: products
+      });
+
+    } catch (error) {
+      logger.error('Error obteniendo productos próximos a vencer:', {
+        companyId: req.user?.companyId,
+        error: error.message
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Obtener productos con descuento
+   */
+  async getDiscountedProducts(req, res, next) {
+    try {
+      const companyId = req.user.companyId;
+
+      const products = await ProductService.getDiscountedProducts(companyId);
+
+      res.json({
+        success: true,
+        data: products
+      });
+
+    } catch (error) {
+      logger.error('Error obteniendo productos con descuento:', {
+        companyId: req.user?.companyId,
+        error: error.message
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Duplicar producto
+   */
+  async duplicateProduct(req, res, next) {
+    try {
+      const { id } = req.params;
+      const overrides = req.body;
+      const companyId = req.user.companyId;
+
+      const duplicatedProduct = await ProductService.duplicateProduct(id, companyId, overrides);
+
+      res.status(201).json({
+        success: true,
+        message: 'Producto duplicado exitosamente',
+        data: duplicatedProduct
+      });
+
+    } catch (error) {
+      logger.error('Error duplicando producto:', {
+        productId: req.params.id,
+        companyId: req.user?.companyId,
+        error: error.message
+      });
+      
+      if (error.message === 'Producto original no encontrado') {
+        return res.status(404).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
+      if (error.message.includes('ya existe')) {
+        return res.status(409).json({
+          success: false,
+          message: error.message
+        });
+      }
+      
+      next(error);
+    }
+  }
+
+  /**
+   * Validar disponibilidad de productos
    */
   async validateProductsAvailability(req, res, next) {
     try {
-      // Validar entrada
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: errors.array()
-        });
-      }
-
       const { products } = req.body;
       const companyId = req.user.companyId;
 
-      logger.info('Validando disponibilidad de productos', {
-        companyId,
-        productsCount: products.length
-      });
+      if (!Array.isArray(products) || products.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Debe proporcionar una lista de productos'
+        });
+      }
 
-      const validation = await productService.validateProductsAvailability(products, companyId);
+      const validation = await ProductService.validateProductsAvailability(products, companyId);
 
       res.json({
         success: true,
@@ -422,7 +598,7 @@ class ProductController {
       });
 
     } catch (error) {
-      logger.error('Error validando disponibilidad de productos', {
+      logger.error('Error validando disponibilidad de productos:', {
         companyId: req.user?.companyId,
         error: error.message
       });

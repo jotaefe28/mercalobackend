@@ -7,131 +7,121 @@ const express = require('express');
 const router = express.Router();
 const productController = require('../controllers/productController');
 const authMiddleware = require('../middlewares/auth');
-const { body, param } = require('express-validator');
-const { INVENTORY_MOVEMENT_TYPES } = require('../utils/constants');
+const rateLimiter = require('../middlewares/rateLimiter.middleware');
 
-// Validaciones
-const createProductValidation = [
-  body('name')
-    .trim()
-    .isLength({ min: 1, max: 255 })
-    .withMessage('El nombre del producto es requerido y debe tener máximo 255 caracteres'),
-  body('price')
-    .isFloat({ min: 0 })
-    .withMessage('El precio debe ser un número positivo'),
-  body('cost')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('El costo debe ser un número positivo'),
-  body('current_stock')
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage('El stock actual debe ser un número entero positivo'),
-  body('min_stock')
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage('El stock mínimo debe ser un número entero positivo'),
-  body('sku')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('El SKU debe tener máximo 100 caracteres'),
-  body('category')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('La categoría debe tener máximo 100 caracteres')
-];
-
-const updateProductValidation = [
-  body('name')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 255 })
-    .withMessage('El nombre del producto debe tener máximo 255 caracteres'),
-  body('price')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('El precio debe ser un número positivo'),
-  body('cost')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('El costo debe ser un número positivo'),
-  body('current_stock')
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage('El stock actual debe ser un número entero positivo'),
-  body('min_stock')
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage('El stock mínimo debe ser un número entero positivo'),
-  body('sku')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('El SKU debe tener máximo 100 caracteres'),
-  body('category')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('La categoría debe tener máximo 100 caracteres')
-];
-
-const updateStockValidation = [
-  body('quantity')
-    .isInt({ min: 1 })
-    .withMessage('La cantidad debe ser un número entero positivo'),
-  body('type')
-    .isIn(Object.values(INVENTORY_MOVEMENT_TYPES))
-    .withMessage('Tipo de movimiento inválido'),
-  body('reason')
-    .trim()
-    .isLength({ min: 1, max: 255 })
-    .withMessage('La razón es requerida y debe tener máximo 255 caracteres')
-];
-
-const validateProductsValidation = [
-  body('products')
-    .isArray({ min: 1 })
-    .withMessage('Se debe proporcionar al menos un producto'),
-  body('products.*.product_id')
-    .isUUID()
-    .withMessage('ID de producto inválido'),
-  body('products.*.quantity')
-    .isInt({ min: 1 })
-    .withMessage('La cantidad debe ser un número entero positivo')
-];
-
-const productIdValidation = [
-  param('productId')
-    .isUUID()
-    .withMessage('ID de producto inválido')
-];
-
-const skuValidation = [
-  param('sku')
-    .trim()
-    .isLength({ min: 1, max: 100 })
-    .withMessage('SKU inválido')
-];
+// Validadores específicos para productos
+const {
+  validateCreateProduct,
+  validateUpdateProduct,
+  validateSearchProducts,
+  validateStockAdjustment,
+  validateBulkPriceUpdate,
+  validateProductId,
+  validateSKU
+} = require('../validators/product.validator');
 
 // Middlewares de autorización
+const requireAuth = authMiddleware.authenticateToken;
+const requireAdmin = authMiddleware.requireRoles(['ADMIN']);
 const requireAdminOrManager = authMiddleware.requireRoles(['ADMIN', 'MANAGER']);
 
 // Aplicar autenticación a todas las rutas
-router.use(authMiddleware.authenticateToken);
+router.use(requireAuth);
 
-// Rutas de productos
-router.post('/', requireAdminOrManager, createProductValidation, productController.createProduct);
-router.get('/', productController.getProducts);
-router.get('/categories', productController.getCategories);
-router.get('/low-stock', productController.getLowStockProducts);
-router.post('/validate-availability', validateProductsValidation, productController.validateProductsAvailability);
-router.get('/sku/:sku', skuValidation, productController.getProductBySku);
-router.get('/:productId', productIdValidation, productController.getProductById);
-router.put('/:productId', requireAdminOrManager, productIdValidation, updateProductValidation, productController.updateProduct);
-router.patch('/:productId/toggle-status', requireAdminOrManager, productIdValidation, productController.toggleProductStatus);
-router.post('/:productId/update-stock', requireAdminOrManager, productIdValidation, updateStockValidation, productController.updateStock);
-router.get('/:productId/stock-history', requireAdminOrManager, productIdValidation, productController.getStockHistory);
+// RUTAS DE CONSULTA (Sin restricciones de rol)
+// Obtener todos los productos con filtros y paginación
+router.get('/', validateSearchProducts, productController.getProducts);
+
+// Buscar productos por término
+router.get('/search', validateSearchProducts, productController.searchProducts);
+
+// Obtener producto por ID
+router.get('/:id', validateProductId, productController.getProductById);
+
+// Obtener producto por SKU
+router.get('/sku/:sku', validateSKU, productController.getProductBySku);
+
+// Obtener producto por código de barras
+router.get('/barcode/:barcode', productController.getProductByBarcode);
+
+// RUTAS DE CONSULTA AVANZADA (Solo ADMIN y MANAGER)
+// Obtener estadísticas de productos
+router.get('/reports/stats', requireAdminOrManager, productController.getProductStats);
+
+// Obtener productos con stock bajo
+router.get('/reports/low-stock', requireAdminOrManager, productController.getLowStockProducts);
+
+// Obtener lista de reabastecimiento
+router.get('/reports/reorder', requireAdminOrManager, productController.getReorderList);
+
+// Obtener productos próximos a vencer
+router.get('/reports/expiring', requireAdminOrManager, productController.getExpiringProducts);
+
+// Obtener productos con descuento
+router.get('/reports/discounted', requireAdminOrManager, productController.getDiscountedProducts);
+
+// Obtener productos por proveedor
+router.get('/supplier/:supplierId', requireAdminOrManager, productController.getProductsBySupplier);
+
+// RUTAS DE GESTIÓN (Solo ADMIN y MANAGER)
+// Crear nuevo producto
+router.post('/', 
+  requireAdminOrManager,
+  rateLimiter.createRateLimit,
+  validateCreateProduct,
+  productController.createProduct
+);
+
+// Actualizar producto
+router.put('/:id',
+  requireAdminOrManager,
+  validateProductId,
+  validateUpdateProduct,
+  productController.updateProduct
+);
+
+// Eliminar producto (soft delete)
+router.delete('/:id',
+  requireAdminOrManager,
+  validateProductId,
+  productController.deleteProduct
+);
+
+// Activar/Desactivar producto
+router.patch('/:id/status',
+  requireAdminOrManager,
+  validateProductId,
+  productController.toggleProductStatus
+);
+
+// Duplicar producto
+router.post('/:id/duplicate',
+  requireAdminOrManager,
+  validateProductId,
+  productController.duplicateProduct
+);
+
+// RUTAS DE GESTIÓN DE INVENTARIO (Solo ADMIN y MANAGER)
+// Ajustar stock del producto
+router.post('/:id/stock/adjust',
+  requireAdminOrManager,
+  validateProductId,
+  validateStockAdjustment,
+  productController.adjustStock
+);
+
+// Actualización masiva de precios
+router.patch('/bulk/prices',
+  requireAdminOrManager,
+  rateLimiter.bulkUpdateRateLimit,
+  validateBulkPriceUpdate,
+  productController.bulkUpdatePrices
+);
+
+// RUTAS DE VALIDACIÓN
+// Validar disponibilidad de productos para venta
+router.post('/validate/availability',
+  productController.validateProductsAvailability
+);
 
 module.exports = router;

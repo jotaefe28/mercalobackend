@@ -17,7 +17,7 @@ class JWTUtils {
   static generateAccessToken(payload) {
     try {
       const tokenPayload = {
-        userId: payload.id,
+        user_id: payload.user_id || payload.id, // Soportar ambos nombres
         company_id: payload.company_id,
         role: payload.role,
         email: payload.email,
@@ -47,7 +47,7 @@ class JWTUtils {
   static generateRefreshToken(payload) {
     try {
       const tokenPayload = {
-        userId: payload.id,
+        user_id: payload.user_id || payload.id, // Soportar ambos nombres
         company_id: payload.company_id,
         tokenType: 'refresh'
       };
